@@ -3,23 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Static Live Server</title>
-    <!-- Styles -->
-    <base href="/web-components/">
-    <link rel="stylesheet" href="wljs/common/styles.css" />
- 
+    <title>Test Page</title>
+
   </head>
   <body>
     <main>
-      <h1>Static Live Server</h1>
-      <p>Edit any file in <code>public/</code> to trigger an automatic reload.</p>
+      <h1>Test Page</h1>
 
 
     <wljs-store json="attachments/8f0674d8-8a5d-40d7-b8a5-bf7114e97175.txt"></wljs-store>
 
-
-    ## Static plots
-    Some example with 2D/3D graphics
+    <h1>Static plots</h1>
+    <p>Some example with 2D/3D graphics</p>
+    
 
     <wljs-editor display="codemirror" type="Input" >
 <xmp>Manipulate[Plot[a[w, 0, eps, 128.6, 158.4, 9.0], {w,0,100}, PlotRange->Full, Prolog->{}, Epilog->{
@@ -37,6 +33,6 @@
 
     </main>
 
-    <script type="module" src="app.js"></script>
+    <script type="module" src="https://cdn.jsdelivr.net/gh/WLJSTeam/web-components@latest/src/common/app.js"></script>
   </body>
 </html>
