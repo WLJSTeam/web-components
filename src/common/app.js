@@ -155,6 +155,9 @@ class WLJSStore extends HTMLElement {
   connectedCallback() {
     this._run();
   }
+  disconnectedCallback() {
+    console.warn('Store was disconnected');
+  }
 
   async _run() {
     // 1) ensure WLJS libs exist first
