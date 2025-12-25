@@ -206,11 +206,15 @@ class WLJSHTML extends HTMLElement {
     if (this.isConnected) this._render();
   }
 
+  _getSourceText() {
+    if (this.hasAttribute("encoded")) return decodeURIComponent(this.textContent.trim() ?? ""); 
+    const script = this.querySelector('script[type="text/plain"]');
+    if (script) return script.textContent.trim() ?? "";
+    return this.textContent.trim() ?? "";
+    }  
+
   _render() {
-    // Prefer attribute "value", else use textContent
-    const encoded = this.getAttribute("value") ?? this.textContent ?? "";
-    const decoded = decodeMaybe(encoded);
-    this.innerHTML = decoded;
+    this.innerHTML = this._getSourceText();
   }
 }
 customElements.define("wljs-html", WLJSHTML);
@@ -225,7 +229,6 @@ customElements.define("wljs-html", WLJSHTML);
  * - fade: presence enables fade behavior (like opts.Fade)
  * - print: if display === "print" (same behavior)
  */
-// Replace ONLY the WLJSEditor implementation with this version.
 
 function decodeMaybe(v) {
   if (v == null) return "";
