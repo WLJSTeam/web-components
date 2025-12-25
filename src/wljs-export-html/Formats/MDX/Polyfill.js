@@ -13,10 +13,14 @@ server.disposeSymbols = () => {
   let copy = Object.keys(symbols);
   copy.forEach(sym => {
     delete core[sym]
+    delete symbols[sym];
   });
-  symbols = undefined;
   return copy;
 } 
+
+server.listSymbols = () => {
+  return symbols;
+}
 
 server.loadKernel = async (payload) => {
     if (!payload) return;
