@@ -190,6 +190,12 @@ server.resetIO = () => {
         symbols[name] = p;
         return p.promise;
       }
+
+      server.disposeSymbols = () => {
+        Object.keys(symbols).forEach(sym => {
+          delete core[sym]
+        })
+      }    
 }
 
 
