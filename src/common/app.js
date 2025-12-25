@@ -194,7 +194,7 @@ customElements.define("wljs-store", WLJSStore);
  */
 class WLJSHTML extends HTMLElement {
   static get observedAttributes() {
-    return ["value"];
+    return ["value", "encoded"];
   }
 
   async connectedCallback() {
@@ -328,7 +328,7 @@ customElements.define("wljs-editor", WLJSEditor);
  */
 class WLJSAssets extends HTMLElement {
   static get observedAttributes() {
-    return ["value"];
+    return ["value", "encoded"];
   }
 
   async connectedCallback() {
@@ -362,11 +362,18 @@ class WLJSAssets extends HTMLElement {
     this.querySelectorAll('[data-wljs-style="1"]').forEach((n) => n.remove());
   }
 
+  _getSourceText() {
+    if (this.hasAttribute("encoded")) return decodeURIComponent(this.textContent.trim() ?? ""); 
+    const script = this.querySelector('script[type="text/plain"]');
+    if (script) return script.textContent.trim() ?? "";
+    return this.textContent.trim() ?? "";
+    } 
+
   _renderAndRun() {
     this._cleanup();
 
-    const encoded = this.getAttribute("value") ?? this.textContent ?? "";
-    const decoded = decodeMaybe(encoded);
+    //const encoded = this.getAttribute("value") ?? this.textContent ?? "";
+    const decoded = this._getSourceText();
     if (!decoded) return;
 
     const tpl = document.createElement("template");
