@@ -9,6 +9,15 @@ let promises;
 let symbols;
 let eventsPool;
 
+server.disposeSymbols = () => {
+  let copy = Object.keys(symbols);
+  copy.forEach(sym => {
+    delete core[sym]
+  });
+  symbols = undefined;
+  return copy;
+} 
+
 server.loadKernel = async (payload) => {
     if (!payload) return;
 
@@ -189,13 +198,7 @@ server.resetIO = () => {
 
         symbols[name] = p;
         return p.promise;
-      }
-
-      server.disposeSymbols = () => {
-        Object.keys(symbols).forEach(sym => {
-          delete core[sym]
-        })
-      }    
+      }   
 }
 
 
