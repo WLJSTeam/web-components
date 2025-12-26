@@ -651,7 +651,10 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     }
 
     let rawImage = false;
-    if (devicePixelRatio > 2.0) {
+
+    const mobileDetected = devicePixelRatio > 2.0 ? true : false;
+    if (mobileDetected) {
+      console.warn('Mobile device detected!');
       const k = 2.0 / devicePixelRatio;
       if (typeof ImageSize == 'number') {
         ImageSize = ImageSize * k;
@@ -680,20 +683,21 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     }
 
     let tinyGraph = false;
+    let deviceFactor = devicePixelRatio;
 
-    if (ImageSize instanceof Array) {
-      if (ImageSize[0] < 100*devicePixelRatio && !(options.PaddingIsImportant)) {
-        tinyGraph = true;
-     
-      }
-    } else {
-      if (ImageSize < 100*devicePixelRatio && !(options.PaddingIsImportant)) {
-        tinyGraph = true;
-  
-      }
+    if (mobileDetected) {
+      deviceFactor = 2.0;
     }
 
-
+    if (ImageSize instanceof Array) {
+      if (ImageSize[0] < 100*deviceFactor && !(options.PaddingIsImportant)) {
+        tinyGraph = true;
+      }
+    } else {
+      if (ImageSize < 100*deviceFactor && !(options.PaddingIsImportant)) {
+        tinyGraph = true;
+      }
+    }
 
 
 
