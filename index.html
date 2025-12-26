@@ -59,30 +59,39 @@
   </head>
   <body>
     <main>
-      <h1>Test Page</h1>
+    <wljs-store kernel="./attachments/kernel-6817105698109836703.txt" json="./attachments/3f53df60-a400-403b-acd6-bab29bc1bcca.txt"></wljs-store>
 
 
-      <wljs-store json="attachments/8f0674d8-8a5d-40d7-b8a5-bf7114e97175.txt"></wljs-store>
+    <h1>Test Page</h1>
+    <p>Welcome to a static HTML page serving an interactive notebook!</p>
+    <p><em>The content was directly exported from WLJS Notebook using export feature <code>HTML Embeddable</code></em></p>
 
-      <h2>Static plots</h2>
-      <p>Some example with 2D/3D graphics</p>
+
+    <h2>Static plots</h2>
+    <p>Some example with 2D/3D graphics</p>
+
+
+    <wljs-editor display="codemirror" type="Input"  ><xmp>ContourPlot[(*SpB[*)Power[x(*|*),(*|*)2](*]SpB*) - (*SpB[*)Power[y(*|*),(*|*)2](*]SpB*) == (*SpB[*)Power[x(*|*),(*|*)3](*]SpB*), {x, -2, 2}, {y, -2, 2}]</xmp></wljs-editor>
+
+    <wljs-editor display="codemirror" type="Output"  ><xmp>(*VB[*)(FrontEndRef["89767da0-eace-4302-8e41-cafefd63f942"])(*,*)(*"1:eJxTTMoPSmNkYGAoZgESHvk5KRCeEJBwK8rPK3HNS3GtSE0uLUlMykkNVgEKW1iam5mnJBropiYmp+qaGBsY6VqkmhjqJiempaalmBmnWZoYAQCJTBYN"*)(*]VB*)</xmp></wljs-editor>
+
+    <wljs-editor display="codemirror" type="Input"  ><xmp>VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]</xmp></wljs-editor>
+
+    <wljs-editor display="codemirror" type="Output"  ><xmp>(*VB[*)(FrontEndRef["3a869d84-3a10-4098-a8b3-9c85bf9bd48a"])(*,*)(*"1:eJxTTMoPSmNkYGAoZgESHvk5KRCeEJBwK8rPK3HNS3GtSE0uLUlMykkNVgEKGydamFmmWJjoGicaGuiaGFha6CZaJBnrWiZbmCalWSalmFgkAgB6QxWD"*)(*]VB*)</xmp></wljs-editor>
+
+    <p>Try to rotate it!</p>
+
+
+    <h2>Interactive example</h2>
+    <p>Here is a basic <code>Manipulate</code> function</p>
+
+
+    <wljs-editor display="codemirror" type="Input"  ><xmp>Manipulate[
+      Series[Sin[x], {x,0,n}], {n,1,10,1}, 
+      ContinuousAction->True
+]</xmp></wljs-editor>
     
-
-      <wljs-editor fade="true" display="codemirror" type="Input" >
-<xmp>Manipulate[Plot[a[w, 0, eps, 128.6, 158.4, 9.0], {w,0,100}, PlotRange->Full, Prolog->{}, Epilog->{
- Line @ matrix[[All, {1,2}]], Dashed, Red, Line @ N @Table[
-    {m[[1]], m[[2]] - a[m[[1]], 0, eps, 128.6, 158.4, 9.0]}
-  , {m,  Select[matrix[[All, {1,2}]], MatchQ[#, {__Real}]&]}]
-
-}], {{eps, 6.3}, 0, 7}, ContinuousAction->True]        
-      </xmp></wljs-editor>
-
-      <wljs-editor display="codemirror" type="Output">
-<xmp>(*VB[*)(Legended[ToExpression[FrontEndRef["b5e1bc6c-b6c8-4f57-9bc5-1c131cf9418e"], InputForm], Placed[PointLegend[{Directive[PointSize[0.009166666666666668], RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]], Directive[PointSize[0.009166666666666668], RGBColor[0.95, 0.627, 0.1425], AbsoluteThickness[2]], Directive[PointSize[0.009166666666666668], RGBColor[0.455, 0.7, 0.21], AbsoluteThickness[2]]}, {0.3, 0.5, 0.8}, LegendMarkers -> {{False, Automatic}, {False, Automatic}, {False, Automatic}}, Joined -> {False, False, False}, LabelStyle -> {}, LegendLayout -> "Column"], After, Identity]])(*,*)(*"1:eJy9U71LHEEUX01McmogirUSsMwVq97lLGS46HkkrBhdSSszs2+S4dYdmZlNPEvBf8BO23QpUlsHgmBhoYWVEFGEEBAs7TIfKudxRSAkr/gx7+37+L2PfU7EInsQBIF6auAdh08zQIXEWsj4sbFE8B6yZIx1W5deA7WEm2/WkXVZ26CBWSkyXcuS2hrQXGOSQjxqzKQEIaFlWiRlWilOsNLL4iShpWJIw/GQssmJsAI+8UMDi7kJe2IfgJP5LG0665LMwfN7ZOBtiikkzD5Vn9UFz7Sn6J1sSMSV9lrBwAyXQDX/CJ5u4TYq5usg97aWX1x/30De3RWvv5oWqZByd3jz18LuAZLjTs6Q3Nm28hP5RAMGqkSJNNew9IHTRgZKcdvN39dmTi6R/HJ1OEeenSM51Xv8eXXq23+oPWLbHj5BNyQukDxdH/paP93/w9q3G7iZ2xGSgZMfLQO8t3N3eH6Hc1g2QKq2VXa3aqrH3htOFbiWqrkWK1hz+m+8HD97bW/M6KDtxlrCO7zakthfJ8IE0lg3U2BB5w6da//dPCLcFLmOLQGznHwlc+mrTJsh2aW9TiDTXDd/A7lNAyc="*)(*]VB*)</xmp>
-      </wljs-editor>
-
-
-    </main>
+    <wljs-editor display="codemirror" type="Output"  ><xmp>(*VB[*)(FrontEndRef["e9738495-4b30-4da3-a61e-d106b2f4b28c"])(*,*)(*"1:eJxTTMoPSmNkYGAoZgESHvk5KRCeEJBwK8rPK3HNS3GtSE0uLUlMykkNVgEKp1qaG1uYWJrqmiQZG+iapCQa6yaaGabqphgamCUZpZkkGVkkAwB7CRVv"*)(*]VB*)</xmp></wljs-editor>
 
     <!--<script type="module" src="./src/common/app.js"></script>-->
     <script type="module" src="https://cdn.jsdelivr.net/gh/WLJSTeam/web-components@latest/src/common/app.js"></script>

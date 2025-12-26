@@ -17,7 +17,7 @@ A web component library for embedding [WLJS Notebooks](https://wljs.io/) (Jupyte
 - 📝 **Graceful Degradation** - Users with JavaScript disabled still see readable code and expressions
 - 🎨 **Interactive Content** - Embed 2D/3D graphics, plots, manipulatable widgets, and more
 - 📦 **CDN-Ready** - Single script import, all dependencies loaded automatically
-- 🔧 **Flexible Encoding** - Supports both `<xmp>`* tags and URI-encoded content
+- **No building step is required**
 - **Framework agnostic** - Life cycle is managed automatically using native web-components compatible with any modern web-framework
 
 > *Yes, we know, that `<xmp>` is not recommended, but it is still widely supported and works better with JS disabled than any other solutions available
