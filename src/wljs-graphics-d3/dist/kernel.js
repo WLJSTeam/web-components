@@ -652,7 +652,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
 
     let rawImage = false;
 
-    const mobileDetected = devicePixelRatio > 2.0 ? true : false;
+    const mobileDetected = /Mobi/i.test(window.navigator.userAgent);
     if (mobileDetected) {
       console.warn('Mobile device detected!');
       const k = 2.0 / devicePixelRatio;

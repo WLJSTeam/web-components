@@ -4324,7 +4324,7 @@ if (options.ImageSize) {
   ImageSize = [core.DefaultWidth, core.DefaultWidth*0.618034];
 }
 
-    const mobileDetected = devicePixelRatio > 2.0 ? true : false;
+    const mobileDetected = /Mobi/i.test(window.navigator.userAgent);
     if (mobileDetected) {
       console.warn('Mobile device detected!');
       const k = 2.0 / devicePixelRatio;
