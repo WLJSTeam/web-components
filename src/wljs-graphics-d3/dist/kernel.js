@@ -658,8 +658,10 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
       const k = 2.0 / devicePixelRatio;
       if (typeof ImageSize == 'number') {
         ImageSize = ImageSize * k;
+        if (ImageSize > 250) ImageSize = 250;
       } else if (typeof ImageSize[0] == 'number') {
         ImageSize[0] = ImageSize[0] * k;
+        if (ImageSize[0] > 250) ImageSize[0] = 250;
         ImageSize[1] = ImageSize[1] * k;
       }
 
