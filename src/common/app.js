@@ -244,7 +244,7 @@ function decodeMaybe(v) {
 
 class WLJSEditor extends HTMLElement {
   static get observedAttributes() {
-    return ["display", "type", "fade", "encoded"];
+    return ["display", "type", "fade", "encoded", "editable"];
   }
 
   async connectedCallback() {
@@ -286,10 +286,12 @@ class WLJSEditor extends HTMLElement {
     this.classList.add('wljs-mounted');
     const host = this;
 
+    const editable = this.getAttribute("editable");
+
     // Instantiate the view
     try {
       const ViewCtor = SupportedCells[display].view;
-      this._instance = new ViewCtor({ element: host }, decoded);
+      this._instance = new ViewCtor({ element: host, editable:editable }, decoded);
     } catch (e) {
       console.error("[WLJSEditor] mount error:", e);
       return;
