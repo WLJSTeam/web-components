@@ -4324,6 +4324,15 @@ if (options.ImageSize) {
   ImageSize = [core.DefaultWidth, core.DefaultWidth*0.618034];
 }
 
+    const mobileDetected = devicePixelRatio > 2.0 ? true : false;
+    if (mobileDetected) {
+      console.warn('Mobile device detected!');
+      const k = 2.0 / devicePixelRatio;
+      ImageSize[0] = ImageSize[0] * k;
+      if (ImageSize[0] > 250) ImageSize[0] = 250;
+      ImageSize[1] = ImageSize[1] * k;
+    }
+
 return ImageSize;
 };
 
