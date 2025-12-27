@@ -288,10 +288,25 @@ class WLJSEditor extends HTMLElement {
 
     const editable = this.getAttribute("editable");
 
+    const event = new CustomEvent('ready', {
+	    bubbles: true,
+	    cancelable: true
+    });
+    this.dispatchEvent(event);
+
     // Instantiate the view
     try {
       const ViewCtor = SupportedCells[display].view;
       this._instance = new ViewCtor({ element: host, noneditable: (!editable) }, decoded);
+      if (display == 'codemirror') {
+        const inst = this._instance?.editor;
+        const event = new CustomEvent('codemirrorReady', {
+	        bubbles: true,
+	        cancelable: true,
+          details: inst
+        }); 
+        this.dispatchEvent(event);       
+      }
     } catch (e) {
       console.error("[WLJSEditor] mount error:", e);
       return;
@@ -318,6 +333,11 @@ class WLJSEditor extends HTMLElement {
 
     try { this._instance?.dispose?.(); } catch (e) { console.error(e); }
     this._instance = null;
+    const event = new CustomEvent('destoyed', {
+	    bubbles: true,
+	    cancelable: true
+    });
+    this.dispatchEvent(event);
   }
 }
 
