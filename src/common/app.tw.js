@@ -303,7 +303,7 @@ class WLJSEditor extends HTMLElement {
         const event = new CustomEvent('codemirrorReady', {
 	        bubbles: true,
 	        cancelable: true,
-          details: inst
+          detail: inst
         }); 
         this.dispatchEvent(event);       
       }
