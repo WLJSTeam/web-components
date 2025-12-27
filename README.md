@@ -206,6 +206,20 @@ wljs-editor.wljs-mounted {
 }
 ```
 
+## How to reduce CSS tables
+Under the hood WLJS uses a subset of Tailwind classes for various components. If you already have Tailwind installed in your system, please use:
+
+```html
+<script type="module" src="https://cdn.jsdelivr.net/gh/WLJSTeam/web-components@latest/src/common/app.tw.js"></script>
+```
+
+with the following safelist:
+
+```
+@source inline('sr-only pointer-events-none pointer-events-auto visible fixed absolute relative input-cell-border sticky inset-0 -top-6 bottom-0 left-0 right-0 top-0 top-6 z-0 z-10 z-40 z-50 -m-1 -m-1.5 m-4 -mx-2 mx-1 mx-4 mx-auto my-1 my-2 my-auto -ml-0 -ml-0.5 -mt-1 mb-1 mb-2 mb-4 mb-6 mb-auto ml-0 ml-0.5 ml-1 ml-3 ml-4 ml-auto mr-0 mr-0.5 mr-1 mr-1.5 mr-2 mr-3 mr-8 mr-auto mt-0 mt-1 mt-10 mt-12 mt-2 mt-3 mt-4 mt-5 mt-6 mt-auto block inline-block inline flex inline-flex table hidden h-1 h-1.5 h-10 h-12 h-16 h-2 h-3 h-4 h-5 h-6 h-7 h-8 h-auto h-full h-px max-h-10 max-h-60 max-h-80 max-h-96 min-h-full w-0 w-1 w-1.5 w-12 w-2 w-2/4 w-3 w-3/6 w-4 w-5 w-56 w-6 w-7 w-8 w-96 w-full w-px w-screen min-w-0 max-w-2xl max-w-60 max-w-7xl max-w-full max-w-lg max-w-xs flex-1 flex-auto flex-none flex-shrink-0 shrink shrink-0 flex-grow grow grow-0 origin-top-right translate-x-0 translate-x-5 translate-y-0 translate-y-2 rotate-45 rotate-90 transform animate-spin cursor-default cursor-pointer cursor-vertical-text select-none resize-none scroll-py-2 list-disc appearance-none flex-row flex-row-reverse flex-col flex-wrap-reverse items-start items-end items-center justify-center justify-between gap-x-1 gap-x-10 gap-x-2 gap-x-3 gap-x-4 gap-x-5 gap-x-6 gap-y-1 gap-y-2 gap-y-3 gap-y-5 gap-y-7 space-x-1 space-y-0 space-y-1 space-y-6 divide-x divide-y divide-gray-100 divide-gray-200 divide-gray-400 divide-gray-500 divide-opacity-10 self-start self-end overflow-hidden overflow-x-auto overflow-y-auto overflow-y-scroll scroll-smooth truncate whitespace-nowrap rounded rounded-full rounded-lg rounded-md rounded-sm rounded-xl rounded-b-lg border border-0 border-2 border-b border-l border-r border-t border-solid border-gray-100 border-gray-200 border-gray-300 border-transparent bg-gray-100 bg-gray-200 bg-gray-400/30 bg-gray-50 bg-gray-500 bg-green-300/50 bg-red-100 bg-red-50 bg-red-600 bg-transparent bg-white bg-white/90 bg-yellow-300 bg-opacity-25 bg-opacity-60 bg-opacity-75 bg-opacity-80 fill-current fill-teal-600 stroke-current p-0 p-0.5 p-1 p-1.5 p-2 p-2.5 p-3 p-4 p-8 px-0 px-1 px-2 px-3 px-4 px-5 px-6 py-0 py-0.5 py-1 py-1.5 py-2 py-3 py-4 py-5 py-6 py-8 pb-0 pb-0.5 pb-1 pb-10 pb-2 pb-3 pb-4 pl-0 pl-0.5 pl-1 pl-2 pl-20 pl-24 pl-3 pl-5 pl-7 pr-0 pr-1 pr-10 pr-2 pr-4 pt-0 pt-0.5 pt-1 pt-2 pt-2.5 pt-5 text-left text-center text-start align-middle font-sans text-2xl text-3xl text-base text-lg text-sm text-xs font-bold font-medium font-semibold uppercase leading-4 leading-5 leading-6 leading-7 leading-8 leading-tight tracking-tight text-black text-blue-600 text-gray-200 text-gray-400 text-gray-500 text-gray-600 text-gray-700 text-gray-800 text-gray-900 text-green-400 text-indigo-600 text-orange-600 text-red-400 text-red-500 text-red-600 text-red-700 text-red-800 text-transparent text-white text-yellow-400 text-opacity-40 opacity-0 opacity-100 shadow shadow-2xl shadow-inner shadow-lg shadow-md shadow-sm shadow-xl outline outline-1 outline-offset-0 outline-gray-300 ring-0 ring-1 ring-inset ring-black ring-gray-200 ring-gray-300 ring-gray-400 ring-opacity-5 sm:mx-0 sm:my-8 sm:ml-3 sm:ml-4 sm:mt-0 sm:mt-4 sm:flex sm:h-10 sm:w-10 sm:w-auto sm:w-full sm:max-w-lg sm:translate-x-0 sm:translate-x-2 sm:translate-y-0 sm:flex-row-reverse sm:flex-col sm:items-start sm:items-end sm:items-center sm:p-0 sm:p-6 sm:px-0 sm:px-2 sm:px-6 sm:pr-3 sm:text-left sm:text-sm sm:text-xs sm:leading-6 md:fixed md:inset-y-0 md:z-50 md:-ml-14 md:ml-2 md:ml-5 md:block md:flex md:flex-col md:space-x-3 md:p-20 md:px-4 md:pl-2 md:pr-5 lg:px-8');
+
+```
+
 ## How It Works
 
 ### Progressive Loading
