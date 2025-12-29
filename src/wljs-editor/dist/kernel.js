@@ -29251,7 +29251,7 @@ function tokenBase(stream, state) {
   // the match is then forwarded to the mma-patterns tokenizer.
   if (
     stream.match(
-      /([a-zA-Z\$][a-zA-Z0-9\$]*\s*:)(?:(?:[a-zA-Z\$][a-zA-Z0-9\$]*)|(?:[^:=>~@\^\&\*\)\[\]'\?,\|])).*/,
+      /([a-zA-Z\$][a-zA-Z0-9\$]*\s*:)/,
       true,
       false
     )
@@ -42052,6 +42052,7 @@ class CodeMirrorCell {
       this.origin.element.ocellref = self;
 
       const extensions = EditorExtensions.map((e) => e(self, initialLang));
+
       if (parent.noneditable) extensions.push(EditorView.editable.of(false));
       //if (type.className) extensions.push(EditorView.editorAttributes.of({class: type.className}))
 
