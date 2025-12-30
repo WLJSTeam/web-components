@@ -4336,7 +4336,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
 
 
 
-    if (args.length == 3) {
+    if (args.length == 3 || args.length == 4) {
       colorCss = "rgb(";
       colorCss += String(Math.floor(255 * (await interpretate(args[0], env)))) + ",";
       colorCss += String(Math.floor(255 * (await interpretate(args[1], env)))) + ",";
