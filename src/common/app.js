@@ -249,7 +249,7 @@ function decodeMaybe(v) {
 
 class WLJSEditor extends HTMLElement {
   static get observedAttributes() {
-    return ["display", "type", "fade", "encoded", "editable"];
+    return ["display", "type", "fade", "encoded", "editable", "lazy"];
   }
 
   async connectedCallback() {
@@ -258,12 +258,43 @@ class WLJSEditor extends HTMLElement {
     this._mounted = true;
     this._instance = null;
 
-    requestAnimationFrame(() => this._mount());
+    if (this.hasAttribute("lazy")) {
+      this._setupLazyLoading();
+    } else {
+      requestAnimationFrame(() => this._mount());
+    }
   }
 
   disconnectedCallback() {
     this._mounted = false;
     this._teardown();
+    if (this._observer) {
+      this._observer.disconnect();
+      this._observer = null;
+    }
+  }
+
+  _setupLazyLoading() {
+    this._observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !this._instance) {
+            this._mount();
+            // Once mounted, we can disconnect the observer
+            if (this._observer) {
+              this._observer.disconnect();
+              this._observer = null;
+            }
+          }
+        });
+      },
+      {
+        rootMargin: "50px", // Start loading slightly before element is visible
+        threshold: 0.01
+      }
+    );
+
+    this._observer.observe(this);
   }
 
   _getSourceText() {
