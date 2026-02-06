@@ -98,7 +98,7 @@ class JSCell {
     view: JSCell
   };
 
-  class ESMCell {
+  class MJSCell {
     scope = {}
     createScopedEval = (scope, script) => {return({
       ondestroy: function() {},
@@ -143,6 +143,6 @@ class JSCell {
     }
   }  
     
-  window.SupportedCells['esm'] = {
-    view: ESMCell
+  window.SupportedCells['mjs'] = {
+    view: MJSCell
   };
