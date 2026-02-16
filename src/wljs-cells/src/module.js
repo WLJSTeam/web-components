@@ -367,11 +367,11 @@ window.CellWrapper = class {
     const pos = list.indexOf(this.uid);
 
     if (!(pos + 1 < list.length) && !(this.props["Hidden"] === true)) {
-      alert('There are no output cells to be hidden');
+      //alert('There are no output cells to be hidden');
       return;
     }
     if (CellHash.get(list[pos + 1]).type != 'Output' && !(this.props["Hidden"] === true)) {
-      alert('There are no output cells to be hidden');
+      //alert('There are no output cells to be hidden');
       return;
     }
 
@@ -432,6 +432,10 @@ window.CellWrapper = class {
     this.throttledSave(content);
     this._event('saved', {uid: this.uid, self:this});
   }
+
+  updateSelection(from, to) {
+    this.throttledSelection(from, to)
+  }
   
   constructor(template, input, list, eventid, meta = {}) {
 
@@ -462,6 +466,11 @@ window.CellWrapper = class {
     CellHash.add(this);
 
     const self = this;
+
+
+    this.throttledSelection = throttle((from, to) => {
+      server.io.fire(self.uid, [from+1, to], 'Selection');
+    }, 300);
 
     this.throttledSave = throttle((content) => {
       server.emitt(self.channel, '{"'+self.uid+'","'+(content)+'"}', "UpdateCell");
@@ -582,7 +591,9 @@ window.CellWrapper = class {
     if (this.type == 'Input') {
       this.element.addEventListener('focusin', ()=>{
         //call on cell focus event
-        server.emitt(self.uid, 'True', 'Focus');
+        
+        server.io.fire(self.uid, true, 'Focus');
+        
         if (!self._fade_block && self.props["Fade"]) {
 
           self.fade(true);
@@ -595,6 +606,12 @@ window.CellWrapper = class {
           self.element.addEventListener('focusout', leftFocus);  
         }
         currentCell = self;
+      });
+    } else {
+      this.element.addEventListener('focusin', ()=>{
+        //call on cell focus event
+        
+        server.io.fire(self.uid, true, 'Focus');
       });
     }
 
@@ -695,7 +712,9 @@ window.CellWrapper = class {
 
     this.element.addEventListener('focusin', ()=>{
       //call on cell focus event
-      server.emitt(self.uid, 'True', 'Focus');
+
+      server.io.fire(self.uid, true, 'Focus');
+
       currentCell = self;
     });
 
@@ -814,7 +833,7 @@ window.WindowWrapper = class {
     //if (this.type == 'Input') {
       this.element.addEventListener('focusin', ()=>{
         //call on cell focus event
-        server.emitt(self.uid, 'True', 'Focus');
+        server.io.fire(self.uid, true, 'Focus');
         currentCell = self;
       });
     //}

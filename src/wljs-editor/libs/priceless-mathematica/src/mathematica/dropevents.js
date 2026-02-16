@@ -5,8 +5,30 @@ import {
   } from "@codemirror/view";
 
 
-  const transferFiles = (list, ev, view, handler) => {
+  const transferFiles = async (list, ev, view, handler) => {
+    
+
+    
+
+
     if (list.length == 0) return;
+
+    if (handler.pasteTypeAsk) {
+      const ch = await handler.pasteTypeAsk(view, ['Import a file', 'Import a path', 'Insert a path']);
+      switch (ch) {
+        case 2:
+          handler.pastePath(view, list.map((el) => window.electronAPI.getFilePath(el)));
+          return;
+        break;
+        case 3:
+          handler.insertPath(view, list.map((el) => window.electronAPI.getFilePath(el)));
+          return;
+        
+        break
+        default:
+      }
+    }
+
     const id = new Date().valueOf();
     let count = 0;
 

@@ -760,5 +760,22 @@ function throttle(cb, delay = () => interpretate.throttle) {
     }
 }
 
+interpretate.alert = (msg) => {
+  if (!window.electronAPI) {
+    alert(msg);
+    return;
+  }
+  electronAPI.showMessageBox({type:'info', message:String(msg)}, console.log);
+}
+
+interpretate.confirm = (msg, cbk) => interpretate.confirmAsync(msg).then((r) => cbk(r == true))
+
+interpretate.confirmAsync = async (msg) => {
+  if (!window.electronAPI) return confirm(msg);
+  const p = Deferred();
+  electronAPI.showMessageBox({type:'question', noLink:true,message:String(msg), buttons:['Cancel', 'OK']}, (r)=>{p.resolve(r.response == 1)});
+  return p.promise;
+}
+
 window.throttle = throttle;
 window.interpretate = interpretate;

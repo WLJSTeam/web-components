@@ -196,7 +196,7 @@ class BracketWidget extends WidgetType {
 
   updateDOM(dom, view) {
     if (dom.ch != this.ch) return false;
-    console.log('update DOM');
+   // console.log('update DOM');
     //console.warn(this.cssClass);
     if (dom.cssClass != this.cssClass) {
       //check if DOM height is undefined 
@@ -272,7 +272,7 @@ const decorationsSeeker = ViewPlugin.fromClass(class {
   ranges;
 
   constructor(view) {
-    console.log('construct ranges');
+    //console.log('construct ranges');
     this.ranges = this.getRanges(view);
     let selected = view.state.selection.ranges[0]
     if (selected && view.hasFocus) selected = selected.from;
@@ -294,7 +294,7 @@ const decorationsSeeker = ViewPlugin.fromClass(class {
   }
 
   update(update) {
-    console.log('check ranges');
+    //console.log('check ranges');
     let unknownDomSizes = false;
 
     //console.log(update.docChanged || update.focusChanged || update.geometryChanged || update.heightChanged || update.selectionSet);
@@ -314,7 +314,7 @@ const decorationsSeeker = ViewPlugin.fromClass(class {
     }
 
     if (!update.selectionSet && !update.focusChanged && !update.geometryChanged && !update.docChanged && !unknownDomSizes) return;
-    console.log('update ranges for sure');
+    //console.log('update ranges for sure');
     let selected = update.view.state.selection.ranges[0]
     if (selected && update.view.hasFocus) selected = selected.from;
     //const time = performance.now();
@@ -746,6 +746,32 @@ const wlDrop = {
       }
     },
 
+    pasteTypeAsk: async (view, choise) => {
+      console.log('asking a user');
+      if (view.dom.ocellref) {
+        const uid = view.dom.ocellref.origin.uid;
+        const res = await server.io.fetch('CoffeeLiqueur`Extensions`FileUploader`Private`askUserToChoose', [uid, choise]);
+        console.log(res);
+        return res;
+      }
+    },
+
+    insertPath: (view, pathsArray) => {
+      selectedEditor = view;
+      if (view.dom.ocellref) {
+        const channel = view.dom.ocellref.origin.channel;
+        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:InsertFilePaths"]');
+      }
+    },
+
+    pastePath: (view, pathsArray) => {
+      selectedEditor = view;
+      if (view.dom.ocellref) {
+        const channel = view.dom.ocellref.origin.channel;
+        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:DropFilePaths"]');
+      }
+    },
+
     file: (ev, view, id, name, result) => {
       //console.log(view.dom.ocellref);
       //console.log(result);
@@ -771,6 +797,29 @@ const wlPaste = {
       server._emitt(channel, `<|"Channel"->"${id}", "Length"->${length}, "CellType"->"wl"|>`, 'Forwarded["CM:PasteEvent"]');
     }
   },
+
+  pasteTypeAsk: async (view, choise) => {
+      if (view.dom.ocellref) {
+        const uid = view.dom.ocellref.origin.uid;
+        return await server.io.fetch('CoffeeLiqueur`Extensions`FileUploader`Private`askUserToChoose', [uid, choise]);
+      }
+  },
+
+  insertPath: (view, pathsArray) => {
+      selectedEditor = view;
+      if (view.dom.ocellref) {
+        const channel = view.dom.ocellref.origin.channel;
+        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:InsertFilePaths"]');
+      }
+  },
+
+  pastePath: (view, pathsArray) => {
+      selectedEditor = view;
+      if (view.dom.ocellref) {
+        const channel = view.dom.ocellref.origin.channel;
+        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:DropFilePaths"]');
+      }
+  },  
 
   file: (ev, view, id, name, result) => {
     console.log(view.dom.ocellref);
@@ -971,36 +1020,26 @@ const EditorExtensions = [
     }, shift: indentLess },
     { key: "Backspace", run: function (editor, key) { 
       if(editor.state.doc.length === 0) { self.origin.remove(); return true; }  
-    } },
-    { key: "ArrowLeft", run: function (editor, key) {  
-      editor.editorLastCursor = editor.state.selection.ranges[0].to;  
-    } },   
-    { key: "ArrowRight", run: function (editor, key) {  
-      editor.editorLastCursor = editor.state.selection.ranges[0].to;  
-    } },                      
+    } },                     
     { key: "ArrowUp", run: function (editor, key) {  
       //console.log('arrowup');
       //console.log(editor.state.selection.ranges[0]);
-      if (editor?.editorLastCursor === editor.state.selection.ranges[0].to) {
+      if (editor.state.selection.main.head == 0) {
         console.log('focus prev');
         self.origin.focusPrev();
-        editor.editorLastCursor = undefined;
         return;
       }
 
-      editor.editorLastCursor = editor.state.selection.ranges[0].to;  
     } },
     { key: "ArrowDown", run: function (editor, key) { 
 
       //console.log(editor.state.selection.ranges[0]);
-      if (editor?.editorLastCursor === editor.state.selection.ranges[0].to) {
+      if  (editor.state.selection.main.head === editor.state.doc.length) {
         console.log('focus next');
         self.origin.focusNext();
-        editor.editorLastCursor = undefined;
         return;
       }
 
-      editor.editorLastCursor = editor.state.selection.ranges[0].to;  
     } },
     { key: "Shift-Enter", preventDefault: true, run: function (editor, key) { 
       console.log(editor.state.doc.toString()); 
@@ -1020,7 +1059,7 @@ const EditorExtensions = [
     , ...defaultKeymap, ...historyKeymap, ...searchKeymap
   ]),
   
-  (self, initialLang) => EditorView.updateListener.of((v) => {
+  (self, initialLang) => EditorView.updateListener.of((v) => { 
     if (v.docChanged) {
       //TODO: TOO SLOW FIXME!!!
       self.origin.save(encodeURIComponent(v.state.doc.toString()));
@@ -1029,6 +1068,8 @@ const EditorExtensions = [
       //console.log('selected editor:');
       //console.log(v.view);
       selectedEditor = v.view;
+      const selection = v.state.selection.main;
+      self.origin?.updateSelection(selection.from, selection.to);
     }
     
   }),

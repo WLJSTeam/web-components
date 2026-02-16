@@ -29466,8 +29466,26 @@ wolframLanguage.reBuild = (vocabulary) => {
   builtinsLocalQ = vocabulary.map((e) => e.type == 'keyword' ? false : true);
 };
 
-const transferFiles = (list, ev, view, handler) => {
+const transferFiles = async (list, ev, view, handler) => {
+    
+
+    
+
+
     if (list.length == 0) return;
+
+    if (handler.pasteTypeAsk) {
+      const ch = await handler.pasteTypeAsk(view, ['Import a file', 'Import a path', 'Insert a path']);
+      switch (ch) {
+        case 2:
+          handler.pastePath(view, list.map((el) => window.electronAPI.getFilePath(el)));
+          return;
+        case 3:
+          handler.insertPath(view, list.map((el) => window.electronAPI.getFilePath(el)));
+          return;
+      }
+    }
+
     const id = new Date().valueOf();
     let count = 0;
 
@@ -29727,6 +29745,19 @@ const pr = (elt, match, group1, group2) => {
 
 const regexp = /(sqrt|undirectededge|directededge|transpose|degree|doublestruckcapital|doublestruck|curlycapital|formalcapital|scriptcapital|capital|curly|formal|script|.*)(.*)/;
 
+
+const processGreeksAll = (elt, str, mode=true) => {
+  
+  if (mode) {
+    const result = str.toLowerCase().match(regexp);
+    elt.innerHTML = pr(elt, result[0], result[1], result[2]);
+  } else {
+
+    elt.innerHTML = str.replaceAll(/\\\[(\w+)\]/g, (match) => {
+      return '&'+match.toLowerCase().slice(2,-1)+';'
+    });
+  }
+};
 
 const processGreeks = (elt, str, mode=true) => {
   
@@ -31557,7 +31588,7 @@ let EditorWidget$5 = class EditorWidget {
     } else {
       bottomEditor = {passiveMode:true, destroy:() => {}, setState:(newState) => {
         if (typeof newState == 'string') {
-          processGreeks(sub.firstChild, newState.slice(1,-1), false);
+          processGreeksAll(sub.firstChild, newState.replaceAll('"',''), false);
         } else {
           sub.innerHTML = '';
           this.bottomEditor = new EditorView({
@@ -31569,7 +31600,7 @@ let EditorWidget$5 = class EditorWidget {
 
       const sp = document.createElement('span');
       sp.style.color = "#777";
-      processGreeks(sp, bottomDoc.slice(1,-1), false);
+      processGreeksAll(sp, bottomDoc.replaceAll('"',''), false);
       sub.appendChild(sp);
     }
 
@@ -41758,6 +41789,32 @@ const wlDrop = {
       }
     },
 
+    pasteTypeAsk: async (view, choise) => {
+      console.log('asking a user');
+      if (view.dom.ocellref) {
+        const uid = view.dom.ocellref.origin.uid;
+        const res = await server.io.fetch('CoffeeLiqueur`Extensions`FileUploader`Private`askUserToChoose', [uid, choise]);
+        console.log(res);
+        return res;
+      }
+    },
+
+    insertPath: (view, pathsArray) => {
+      selectedEditor = view;
+      if (view.dom.ocellref) {
+        const channel = view.dom.ocellref.origin.channel;
+        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:InsertFilePaths"]');
+      }
+    },
+
+    pastePath: (view, pathsArray) => {
+      selectedEditor = view;
+      if (view.dom.ocellref) {
+        const channel = view.dom.ocellref.origin.channel;
+        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:DropFilePaths"]');
+      }
+    },
+
     file: (ev, view, id, name, result) => {
       //console.log(view.dom.ocellref);
       //console.log(result);
@@ -41783,6 +41840,29 @@ const wlPaste = {
       server._emitt(channel, `<|"Channel"->"${id}", "Length"->${length}, "CellType"->"wl"|>`, 'Forwarded["CM:PasteEvent"]');
     }
   },
+
+  pasteTypeAsk: async (view, choise) => {
+      if (view.dom.ocellref) {
+        const uid = view.dom.ocellref.origin.uid;
+        return await server.io.fetch('CoffeeLiqueur`Extensions`FileUploader`Private`askUserToChoose', [uid, choise]);
+      }
+  },
+
+  insertPath: (view, pathsArray) => {
+      selectedEditor = view;
+      if (view.dom.ocellref) {
+        const channel = view.dom.ocellref.origin.channel;
+        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:InsertFilePaths"]');
+      }
+  },
+
+  pastePath: (view, pathsArray) => {
+      selectedEditor = view;
+      if (view.dom.ocellref) {
+        const channel = view.dom.ocellref.origin.channel;
+        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:DropFilePaths"]');
+      }
+  },  
 
   file: (ev, view, id, name, result) => {
     console.log(view.dom.ocellref);
@@ -42027,7 +42107,8 @@ const EditorExtensions = [
       //console.log('selected editor:');
       //console.log(v.view);
       selectedEditor = v.view;
-      
+      const selection = v.state.selection.main;
+      self.origin?.updateSelection(selection.from, selection.to);
     }
     
   }),

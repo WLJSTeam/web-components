@@ -89,7 +89,7 @@ class JSCell {
   }
   
   window.SupportedLanguages.push({
-    check: (r) => {return(r[0].match(/\w*\.(js|esm)$/) != null)},
+    check: (r) => {return(r[0].match(/\w*\.(js|mjs)$/) != null)},
     plugins: [codemirror.javascript(), codemirror.EditorView.editorAttributes.of({class: 'clang-js'})],
     name: codemirror.javascriptLanguage.name
   });
@@ -144,5 +144,9 @@ class JSCell {
   }  
     
   window.SupportedCells['mjs'] = {
+    view: MJSCell
+  };
+
+  window.SupportedCells['esm'] = {
     view: MJSCell
   };

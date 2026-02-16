@@ -7,7 +7,7 @@ core['CoffeeLiqueur`Extensions`Rasterize`Internal`OverlayView'] = async (args, e
 core['CoffeeLiqueur`Extensions`Editor`Internal`InsertToClipBoard'] = async (args, env) => {
     const data = await interpretate(args[0], env);
     if (!navigator.clipboard) {
-        alert('Clipboard manipulation are forbidden in non-secured contexts. Please run an app locally or use reverse proxy with TLS.');
+        interpretate.alert('Clipboard manipulation are forbidden in non-secured contexts. Please run an app locally or use reverse proxy with TLS.');
         throw 'Clipboard manipulation are forbidden in non-secured contexts.';
     }
     navigator.clipboard.writeText(encodeURIComponent(data));
@@ -36,7 +36,7 @@ core['CoffeeLiqueur`Extensions`Rasterize`Internal`OverlayView'].Dispose = async 
 
 core.Confirm = async (args, env) => {
     const text = await interpretate(args[0], env);
-    return confirm(text);
+    return await interpretate.confirmAsync(text);
 }
 
 core['CoffeeLiqueur`Extensions`Rasterize`Internal`OverlayView'].Capture = async (args, env) => {
@@ -63,7 +63,7 @@ core['CoffeeLiqueur`Extensions`Rasterize`Internal`OverlayView'].Capture = async 
 core['CoffeeLiqueur`Extensions`Rasterize`Internal`GetPDF'] = async (args, env) => {
     if (!(window?.electronAPI?.toPDF)) {
         if (overlay) await overlay.dispose();
-        alert('PDF generation is only possible using WLJS desktop app (Electron)');
+        interpretate.alert('PDF generation is only possible using WLJS desktop app (Electron)');
         throw('PDF generation is only possible on desktop app (Electron)');
     }
 
@@ -80,12 +80,22 @@ core['CoffeeLiqueur`Extensions`Rasterize`Internal`GetPDF'] = async (args, env) =
 core['CoffeeLiqueur`Extensions`ContextMenu`Internal`ReadSelectionInDoc'] = (args, env) => document.getSelection().toString()
 core['CoffeeLiqueur`Extensions`EditorView`FrontTextSelected'] = (args, env) => document.getSelection().toString() 
 
+core['CoffeeLiqueur`Extensions`Rasterize`Internal`takeScreenshot'] = async (args, env) => {
+  if (!window.electronAPI) return false;
+  const opts = await core._getRules(args, env);
+  const p = new Deferred();
+  window.electronAPI.requestScreenshot(opts, (d)=>{
+    p.resolve(d);
+  });
+  return p.promise;
+}
+
 const printingStyles = `%20%40media%20print%20%7B%0A%20%20%20%20html%2C%20body%20%7B%0A%20%20%20%20%20%20%20%20margin%3A%200%20!important%3B%0A%20%20%20%20%20%20%20%20padding%3A%200%20!important%3B%0A%20%20%20%20%20%20%20%20width%3A%20auto%20!important%3B%0A%20%20%20%20%20%20%20%20height%3A%20auto%20!important%3B%0A%20%20%20%20%20%20%20%20display%3A%20block%20!important%3B%0A%20%20%20%20%7D%0A%0Abody%20%3E%20*%3Anot(.print-only)%20%7B%0A%20%20%20%20%20%20%20%20display%3A%20none%20!important%3B%0A%20%20%20%20%7D%0A%0A%0A%20%20%20%20.print-only%20%7B%0A%20%20%20%20%20%20%20%20display%3A%20block%20!important%3B%0A%20%20%20%20%7D%0A%0A%20%20%20%20%40page%20%7B%0A%20%20%20%20%20%20%20%20size%3A%20auto%3B%0A%20%20%20%20%20%20%20%20margin%3A%200%3B%0A%20%20%20%20%7D%0A%7D`;
 
 core['CoffeeLiqueur`Extensions`Rasterize`Internal`OverlayView'].Create = async (args, env) => {
     if (!(window?.electronAPI?.requestScreenshot)) {
         if (overlay) await overlay.dispose();
-        alert('Rasterization is only possible using WLJS desktop app (Electron)');
+        interpretate.alert('Rasterization is only possible using WLJS desktop app (Electron)');
         throw('Rasterization is only possible on desktop app (Electron)');
     }
 
