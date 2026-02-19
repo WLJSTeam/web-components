@@ -1,7 +1,5 @@
 # WLJS Web-Components
 
-***RELEASE IS NOT STABLE, PLEASE WAIT***
-
 
 A web component library for embedding [WLJS Notebooks](https://wljs.io/) (Jupyter-like notebooks for freeware Wolfram Engine) into static HTML pages. Export your WLJS Notebook as embeddable HTML and get interactive plots, mathematical expressions, and dynamic content on any webpage.
 
