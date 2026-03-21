@@ -390,6 +390,92 @@
     return;
   }
 
+  boxes['BoxForm`TooltipId'] = async (args, env) => {
+    let globalStore = {};
+    //virtualization
+    try {
+      await interpretate(['FrontEndExecutable', args[0]], { element: env.element, global: globalStore });
+    } catch(m) {
+      console.log('FE Object is not available for given tooltip');
+    }
+    return {
+      name: 'TooltipItem',
+      destroy: () => {
+        if (globalStore.stack) {
+          for (const obj of Object.values(globalStore.stack))  {
+            obj.dispose();
+            console.log('purging tooltip');
+            globalStore = {};
+          }
+        }
+      }
+    }
+  }
+
+  boxes['BoxForm`TooltipId'].update = (args, env) => {}
+
+  core.Tooltip = async (args, env) => {
+    try {
+      await interpretate(args[0], env);
+    } catch(err) {
+      console.error(err);
+    }
+  }
+
+  core.Tooltip.update = core.Tooltip;
+
+  boxes.ViewDecorator.Tooltip = async (args, env) => {
+    let tooltipTimeout = null;
+    let tooltipEl = null;
+    let tooltipItem = null;
+
+    const showTooltip = async () => {
+      if (tooltipEl) return;
+
+      tooltipEl = document.createElement('div');
+      tooltipEl.classList.add('wljs-tooltip', 'text-sm', 'dark:invert', 'dark:hue-rotate-180','dark:contrast-75','dark:brightness-5', 'bg-white','dark:win:contrast-100');
+      tooltipEl.style.position = 'absolute';
+      tooltipEl.style.zIndex = '9999';
+      tooltipEl.style.padding = '4px 8px';
+      tooltipEl.style.borderRadius = '0.25rem';
+      //tooltipEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+      tooltipEl.style.pointerEvents = 'none';
+
+      // Position tooltip above the element
+      const rect = env.element.getBoundingClientRect();
+      tooltipEl.style.left = `${rect.left + window.scrollX}px`;
+      tooltipEl.style.top = `${rect.top + window.scrollY - 30}px`;
+
+      document.body.appendChild(tooltipEl);
+
+      // Render tooltip content from args[0]
+      tooltipItem = await interpretate(args[0], {element: tooltipEl});
+      if (typeof tooltipItem == 'number' || typeof tooltipItem == 'string') {
+        tooltipEl.innerText = tooltipItem;
+        tooltipItem = {destroy: () => {}};
+      }
+    };
+
+    const hideTooltip = () => {
+      if (tooltipTimeout) {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = null;
+      }
+      if (tooltipEl) {
+        if (tooltipItem) tooltipItem.destroy(); 
+        tooltipEl.remove();
+        tooltipEl = null;
+        tooltipItem = null;
+      }
+    };
+
+    env.element.addEventListener('mouseenter', () => {
+      tooltipTimeout = setTimeout(showTooltip, 300);
+    });
+
+    env.element.addEventListener('mouseleave', hideTooltip);
+  }
+
   boxes.ViewDecorator.Semantic = async (args, env) => {
     
     const span = env.global.element;
