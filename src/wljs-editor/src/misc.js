@@ -6,11 +6,12 @@ core['CoffeeLiqueur`Extensions`Rasterize`Internal`OverlayView'] = async (args, e
 
 core['CoffeeLiqueur`Extensions`Editor`Internal`InsertToClipBoard'] = async (args, env) => {
     const data = await interpretate(args[0], env);
+    const encoded = await interpretate(args[1], env);
     if (!navigator.clipboard) {
         interpretate.alert('Clipboard manipulation are forbidden in non-secured contexts. Please run an app locally or use reverse proxy with TLS.');
         throw 'Clipboard manipulation are forbidden in non-secured contexts.';
     }
-    navigator.clipboard.writeText(encodeURIComponent(data));
+    if (encoded) navigator.clipboard.writeText(decodeURIComponent(data)); else navigator.clipboard.writeText(encodeURIComponent(data));
 }
 
 core['CoffeeLiqueur`Extensions`System`Internal`opClipboard'] = async (args, env) => {
@@ -237,6 +238,7 @@ core['CoffeeLiqueur`Extensions`RemoteCells`Private`openNotebook'] = async (args,
 
 core.SystemOpen = async (args, env) => {
     const type = await interpretate(args[1], env);
+    if (!window.electronAPI) interpretate.alert('This feature is available only for the desktop application');
     await core.SystemOpen[type](args[0], env);
 }
 
@@ -262,6 +264,7 @@ core['CoffeeLiqueur`Extensions`System`Internal`RequestDirectory'] = async (args,
 
     if (!api) {
         console.error('Electron API not found! Feature is only available for desktop app');
+        interpretate.alert('This feature is available only for the desktop application');
         p.resolve('$Failed');
     }
     
@@ -286,6 +289,7 @@ core['CoffeeLiqueur`Extensions`System`Internal`RequestFile'] = async (args, env)
 
     if (!api) {
         console.error('Electron API not found! Feature is only available for desktop app');
+        interpretate.alert('This feature is available only for the desktop application');
         p.resolve('$Failed');
     }
 
