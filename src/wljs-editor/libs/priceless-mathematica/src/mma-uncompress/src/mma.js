@@ -2,7 +2,7 @@
 // Mathematica's core data types, a decoder for the internal "!boR" format
 // and an implementation of Mathematica's Decompress[] function.
 
-const pako = require('pako');
+const unzlibSync = interpretate.unzlibSync;
 
 export let Mma = {};
 Mma.Util = {};
@@ -44,6 +44,12 @@ Mma.Util.U8ArrayToString = function (array) {
             null, array.subarray(i, i+chunkSize)));
     }
     return substrings.join("");
+}
+
+Mma.Util.UnescapeMmaUnicode = function (str) {
+    return str.replace(/\\:([0-9A-Fa-f]{4})/g, function (_, hex) {
+        return String.fromCodePoint(parseInt(hex, 16));
+    });
 }
 
 // Delete a character at a specific position from a string.
@@ -285,7 +291,7 @@ Mma.Decode.Any = function (bits, offset, maxParts) {
         // Symbols are also just strings.
         case SYMBOL:
             var se = Mma.Decode.StringEntry(bits, offset);
-            parts.push(new Mma.Symbol(se.string));
+            parts.push(new Mma.Symbol(Mma.Util.UnescapeMmaUnicode(se.string)));
             offset += se.bytesRead;
             state = READY;
             break;
@@ -293,7 +299,7 @@ Mma.Decode.Any = function (bits, offset, maxParts) {
         // Strings are, surprisingly, just strings.
         case STRING:
             var se = Mma.Decode.StringEntry(bits, offset);
-            parts.push(new Mma.String(se.string));
+            parts.push(new Mma.String(Mma.Util.UnescapeMmaUnicode(se.string)));
             offset += se.bytesRead;
             state = READY;
             break;
@@ -387,7 +393,7 @@ Mma.Decompress = function (compressedString) {
     }
     var b64EncodedData = compressedString.trim().slice(2);
     var bitsCompressed = Mma.Util.Base64Decode(b64EncodedData);
-    var bits = pako.inflate(bitsCompressed);
+    var bits = unzlibSync(bitsCompressed);
     var headerString = Mma.Util.U8ArrayToString(bits.slice(0,4))
     if (headerString !== "!boR") {
         Mma.Warn("Decompress: unknown header string " + headerString +
