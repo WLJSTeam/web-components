@@ -30,7 +30,6 @@ const WLJS_BOOTSTRAP = (() => {
     "wljs-cells/src/module.js",
     "wljs-editor/dist/kernel.js",
     "wljs-editor/src/boxes.js",
-    "wljs-editor/src/metamarkers.js",
     "wljs-editor/src/objects.js",
     "wljs-editor/src/frontsubmit.js",
     "wljs-js-support/src/kernel.js",
