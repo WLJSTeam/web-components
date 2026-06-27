@@ -238,7 +238,6 @@ window.CellWrapper = class {
     const pos = list.indexOf(this.uid);
     if (pos + 1 < list.length) {
       const next = CellHash.get(list[pos + 1]);
-      console.log([next.display.editor, (!skipOutputs || (next.type == 'Input')), !next.invisible, !next.props["Locked"]]);
       if (next.display.editor && (!skipOutputs || (next.type == 'Input')) && !next.invisible && !next.props["Locked"]) {
         
         next.focus(1);
@@ -260,6 +259,7 @@ window.CellWrapper = class {
       //temporary unhide it
       self.toggle(false);
       self.display.focus(dir);
+      this.element.scrollIntoView({block: 'nearest'});
 
       function leftFocus() {
         self.toggle(false);
@@ -282,6 +282,7 @@ window.CellWrapper = class {
       self.element.addEventListener('focusout', leftFocus);       
     } {
       self.display.focus(dir);
+      self.element.scrollIntoView({block: 'nearest'});
     }
   }
 

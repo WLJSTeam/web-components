@@ -166,10 +166,9 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
   g2d["Graphics`Canvas"] = async (args, env) => {
     //const copy = {...env};
     //modify local axes to transform correctly the coordinates of scaled container
-    let t = {k: 1, x:0, y:0};
-    env.onZoom.push((tranform) => {
-      t = tranform;
-    });
+    //read the live zoom transform from the shared store so both user gestures and
+    //programmatic ZoomAt are reflected immediately (see env.local.currentZoomTransform)
+    const currentTransform = () => env.local.currentZoomTransform || {k: 1, x: 0, y: 0};
 
     const copy = {xAxis: env.xAxis, yAxis: env.yAxis};
 
@@ -182,11 +181,13 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     };
 
     env.xAxis.invert = (x) => {
+      const t = currentTransform();
       const X = (x - t.x - env.panZoomEntites.left) / t.k;
       return copy.xAxis.invert(X);
     };
 
     env.yAxis.invert = (y) => {
+      const t = currentTransform();
       const Y = (y - t.y - env.panZoomEntites.top) / t.k;
       return copy.yAxis.invert(Y);
     };
@@ -1178,7 +1179,10 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     if (options.PlotRange || env.plotRange) {
       const r = env.plotRange || (await interpretate(options.PlotRange, env));
 
-      if (Number.isFinite(r[0][0])) {
+      if (typeof r == 'number') {
+        range = [[-r,r], [-r,r]];
+        unknownRanges = false;
+      } else if (Number.isFinite(r[0][0])) {
         if (Number.isFinite(r[1][0])) {
           range = r;
           unknownRanges = false;
@@ -2780,8 +2784,14 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
       const zoom = d3.zoom().filter(filter).on("zoom", zoomed);
    
       listener.call(zoom);
-      
+
       env._zoom = zoom;
+
+      //keep track of the current zoom transform so it can be queried later (see g2d.ZoomAt)
+      env.local.currentZoomTransform = d3.zoomIdentity;
+      env.onZoom.push((transform) => {
+        env.local.currentZoomTransform = transform;
+      });
 
       const resetZoom = () => {
         const transform = d3.zoomIdentity;
@@ -4802,12 +4812,22 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
   }
 
   g2d.ZoomAt = async (args, env) => {
-    let zoom = await interpretate(args[0], env);
     const dims = {
 
       width: env.xAxis((env.plotRange[0][0] + env.plotRange[0][1])/2.0),
       height: env.yAxis((env.plotRange[1][0] + env.plotRange[1][1])/2.0)
     }
+
+    //called with no arguments: report current zoom and position as [zoom, [x, y]]
+    if (args.length === 0) {
+      const t = env.local.currentZoomTransform || d3.zoomIdentity;
+      //invert the transform built below to recover the focused point in data coordinates
+      const px = (dims.width  - t.x) / t.k;
+      const py = (dims.height - t.y) / t.k;
+      return [t.k, [env.xAxis.invert(px), env.yAxis.invert(py)]];
+    }
+
+    let zoom = await interpretate(args[0], env);
 
     let translate = [(env.plotRange[0][0] + env.plotRange[0][1])/2.0, -(env.plotRange[1][0] + env.plotRange[1][1])/2.0];
     if (args.length > 1) {
@@ -4822,7 +4842,15 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     console.log(env.svg.attr('transform'));
 
     const transform = d3.zoomIdentity.translate(dims.width, dims.height).scale(zoom).translate(-translate[0], -translate[1]);
-    
+    env.local.currentZoomTransform = transform;
+
+    //sync the d3.zoom behavior's internal transform so a subsequent user drag/wheel
+    //continues from here instead of snapping back to the pre-ZoomAt transform
+    if (env._zoom && o.canvas) o.canvas.node().__zoom = transform;
+
+    //notify onZoom listeners (event coordinate inversion, currentZoomTransform tracker, ...)
+    //so screen->data conversion is correct immediately, not only after the first user drag
+    if (env.onZoom) env.onZoom.forEach((h) => h(transform));
 
     o.svg.maybeTransition(env.transitionType, env.transitionDuration).attr("transform", transform);
     if (o.gX)
@@ -4831,7 +4859,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
       o.gY.maybeTransition(env.transitionType, env.transitionDuration).call(o.yAxis.scale(transform.rescaleY(o.y)));
 
     // Update grid lines
-    if (o.gGX) o.gGX.maybeTransition(env.transitionType, env.transitionDuration).call(o.xGrid(transform.rescaleY(o.x)));
+    if (o.gGX) o.gGX.maybeTransition(env.transitionType, env.transitionDuration).call(o.xGrid(transform.rescaleX(o.x)));
     if (o.gGY) o.gGY.maybeTransition(env.transitionType, env.transitionDuration).call(o.yGrid(transform.rescaleY(o.y)));
 
     if (o.gTX)
@@ -5118,11 +5146,13 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     
 
     const {gl, programInfo} = env.wgl;
-    let bufferInfo; 
-    
+    let bufferInfo;
+    const use32bit = env.wgl.fallbackVertices.length > 65535;
+    const makeIndices = (arr) => use32bit ? new Uint32Array(arr) : new Uint16Array(arr);
+
     switch(points[0].length) {
       case 3:
-        bufferInfo = twgl.createBufferInfoFromArrays(gl, { indices:  points.flat(Infinity).map((index) => index-1)});
+        bufferInfo = twgl.createBufferInfoFromArrays(gl, { indices: makeIndices(points.flat(Infinity).map((index) => index-1))});
       break;
 
       case 4:
@@ -5136,8 +5166,8 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
           );
         }
 
-        bufferInfo = twgl.createBufferInfoFromArrays(gl, { 
-          indices: temporalBuffer
+        bufferInfo = twgl.createBufferInfoFromArrays(gl, {
+          indices: makeIndices(temporalBuffer)
         });}
 
       break;
@@ -5155,13 +5185,13 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
               p[0] - 1, p[3] - 1, p[4] - 1
             );
           }
-      
+
           bufferInfo = twgl.createBufferInfoFromArrays(gl, {
-            indices: temporalBuffer
+            indices: makeIndices(temporalBuffer)
           });
         }
         break;
-      
+
       case 6:
         // Handle Hexagon (6 points)
         {
@@ -5176,13 +5206,13 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
               p[0] - 1, p[4] - 1, p[5] - 1
             );
           }
-      
+
           bufferInfo = twgl.createBufferInfoFromArrays(gl, {
-            indices: temporalBuffer
+            indices: makeIndices(temporalBuffer)
           });
         }
         break;
-    
+
       default:
         // Handle Arbitrary Polygon (N points)
         // Using earcut triangulation
@@ -5191,19 +5221,19 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
         if (!earcut) earcut = (await import('earcut')).default;
 
         for (let poly of points) {
-          
+
           poly = poly.map((index)=>index-1);
 
           const explicitVertices = poly.flatMap((index) => fallbackVertices[index]);
-          
-          
+
+
           localIndices.push(earcut(explicitVertices).map((index) => poly[index]));
-          
+
         }
 
 
-        bufferInfo = twgl.createBufferInfoFromArrays(gl, { 
-          indices: localIndices.flat()
+        bufferInfo = twgl.createBufferInfoFromArrays(gl, {
+          indices: makeIndices(localIndices.flat())
         });
 
         // Save points (1-indexed) for handler recomputation when vertices update.
@@ -5859,14 +5889,101 @@ g2d.BezierCurve = async (args, env) => {
     drawSampled(ctrl, Math.max(24, leftover * 12));
   }
 
-  return env.svg.append("path")
+  const object = env.svg.append("path")
     .attr("fill", "none")
     .attr("vector-effect", "non-scaling-stroke")
     .attr("opacity", env.opacity)
     .attr("stroke", env.color)
     .attr("stroke-width", env.strokeWidth)
     .attr("d", path);
+
+  env.local.object = object;
+  env.local.degreeOpt = degreeOpt;
+
+  return object;
 };
+
+g2d.BezierCurve.update = async (args, env) => {
+  const options = await core._getRules(args, env);
+  let points = await interpretate(args[0], env);
+
+  const degreeOpt = (options && Number.isInteger(options.SplineDegree))
+    ? options.SplineDegree
+    : (env.local.degreeOpt ?? 3);
+  const deg = Math.max(1, degreeOpt);
+
+  const x = env.xAxis;
+  const y = env.yAxis;
+
+  points = points.map(p => [x(p[0]), y(p[1])]);
+
+  const path = d3.path();
+
+  if (points.length >= 2) {
+    path.moveTo(points[0][0], points[0][1]);
+
+    let i = 1;
+    while (i + deg - 1 < points.length) {
+      const remaining = points.length - i;
+
+      if (deg === 3 && remaining >= 3) {
+        path.bezierCurveTo(
+          points[i][0], points[i][1],
+          points[i + 1][0], points[i + 1][1],
+          points[i + 2][0], points[i + 2][1]
+        );
+        i += 3;
+      } else if (deg === 2 && remaining >= 2) {
+        path.quadraticCurveTo(
+          points[i][0], points[i][1],
+          points[i + 1][0], points[i + 1][1]
+        );
+        i += 2;
+      } else {
+        const take = Math.min(deg, remaining);
+        const ctrl = [path._currentPoint || points[i - 1]]
+          .concat(points.slice(i, i + take));
+        drawSampled(path, ctrl, Math.max(24, take * 12));
+        const end = ctrl[ctrl.length - 1];
+        path._currentPoint = [end[0], end[1]];
+        i += take;
+      }
+    }
+
+    const leftover = points.length - i;
+    if (leftover === 1) {
+      path.lineTo(points[i][0], points[i][1]);
+    } else if (leftover === 2) {
+      path.quadraticCurveTo(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1]);
+    } else if (leftover > 2) {
+      const ctrl = [path._currentPoint || points[i - 1]].concat(points.slice(i));
+      drawSampled(path, ctrl, Math.max(24, leftover * 12));
+    }
+  }
+
+  env.local.degreeOpt = degreeOpt;
+
+  const dStr = path.toString();
+  env.local.object
+    .maybeTransition(env.transitionType, env.transitionDuration)
+    .attr("d", dStr);
+};
+
+g2d.BezierCurve.updateColor = (args, env) => {
+  env.local.object.style("stroke", env.color);
+};
+
+g2d.BezierCurve.updateOpacity = (args, env) => {
+  env.local.object.style("opacity", env.opacity);
+};
+
+g2d.BezierCurve.destroy = (args, env) => {
+  if (!env.local || !env.local.object) return;
+  env.local.object.remove();
+  delete env.local.object;
+};
+
+g2d.BezierCurve.virtual = true;
 
 
 
@@ -6794,7 +6911,6 @@ return object;
     let indices = points.flat(Infinity).map(i => i - 1);
 
     if (env.wgl.fallbackVertices.length > 65535) {
-      console.warn('Vertex buffer is too large and may not be indexed correctly');
       bufferInfo = twgl.createBufferInfoFromArrays(gl, {
         indices: new Uint32Array(indices)
       });
@@ -7011,10 +7127,9 @@ return object;
 
   const getCanvas = (env) => {
 
-    let t = {k: 1, x:0, y:0};
-    env.onZoom.push((tranform) => {
-      t = tranform;
-    });
+    //read the live zoom transform from the shared store so both user gestures and
+    //programmatic ZoomAt are reflected immediately (see env.local.currentZoomTransform)
+    const currentTransform = () => env.local.currentZoomTransform || {k: 1, x: 0, y: 0};
 
     const copy = {xAxis: env.xAxis, yAxis: env.yAxis};
 
@@ -7027,11 +7142,13 @@ return object;
     };
 
     env.xAxis.invert = (x) => {
+      const t = currentTransform();
       const X = (x - t.x - env.panZoomEntites.left) / t.k;
       return copy.xAxis.invert(X);
     };
 
     env.yAxis.invert = (y) => {
+      const t = currentTransform();
       const Y = (y - t.y - env.panZoomEntites.top) / t.k;
       return copy.yAxis.invert(Y);
     };
@@ -7162,17 +7279,18 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
 
   object.classed("cursor-pointer", true);
 
-  let t = { k: 1, x: 0, y: 0 };
-  env.onZoom.push((transform) => {
-    t = transform;
-  });
+  //read the live zoom transform from the shared store so both user gestures and
+  //programmatic ZoomAt are reflected immediately (see env.local.currentZoomTransform)
+  const currentTransform = () => env.local.currentZoomTransform || { k: 1, x: 0, y: 0 };
 
   const xAxisinvert = (x) => {
+    const t = currentTransform();
     const X = (x - t.x - env.panZoomEntites.left) / t.k;
     return env.xAxis.invert(X);
   };
 
   const yAxisinvert = (y) => {
+    const t = currentTransform();
     const Y = (y - t.y - env.panZoomEntites.top) / t.k;
     return env.yAxis.invert(Y);
   };
@@ -9431,3 +9549,12 @@ g2d.GraphicsGroupBox = g2d.GraphicsGroup
 g2d.GraphicsComplexBox = g2d.GraphicsComplex
 g2d.DiskBox = g2d.Disk
 g2d.LineBox = g2d.Line
+
+//aliases, normally you do not use them
+g2d['CoffeeLiqueur`Extensions`Graphics`Controls'] = g2d.Controls
+g2d['CoffeeLiqueur`Extensions`Graphics`TransitionType'] = g2d.TransitionType
+g2d['CoffeeLiqueur`Extensions`Graphics`TransitionDuration'] = g2d.TransitionDuration
+g2d['CoffeeLiqueur`Extensions`Graphics`ZoomAt'] = g2d.ZoomAt
+g2d['CoffeeLiqueur`Extensions`Graphics`SVGAttribute'] = g2d.SVGAttribute
+g2d['CoffeeLiqueur`Extensions`Graphics`AnimationFrameListener'] = g2d.AnimationFrameListener
+g2d['CoffeeLiqueur`Extensions`Graphics`SVGGroup'] = g2d.SVGGroup
