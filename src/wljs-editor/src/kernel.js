@@ -1005,7 +1005,6 @@ const EditorExtensions = [
   () => syntaxHighlighting(defaultHighlightStyle, { fallback: false }),
   () => highlightSelectionMatches(),
   () => cellTypesHighlight,
-  () => placeholder('Type WL Expression / .md / .js'),
 
   () => EditorState.allowMultipleSelections.of(true),
   
@@ -1230,8 +1229,17 @@ class CodeMirrorCell {
     }
     //console.warn(options);
     if ('Selectable' in options) {
-      if (!options.Selectable)
+      if (!options.Selectable) {
         ext.push(EditorView.editable.of(false));
+        ext.push(EditorView.domEventHandlers({
+          blur: (ev, v) => {
+            return;
+          },
+          focus: (ev,v) => {
+            v.contentDOM.setAttribute("contenteditable","false");
+          }
+        }));
+      }
     }
 
     if (options.ForceUpdate) {
