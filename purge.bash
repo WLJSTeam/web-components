@@ -1,4 +1,7 @@
 urls=(
+  "common/app.js"
+  "common/app.tw.js"
+  "common/styles.css"
   "common/styles.tw.css"
   "wljs-editor/src/styles.css"
   "wljs-graphics3d-threejs/src/styles.css"
