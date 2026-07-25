@@ -40,7 +40,7 @@ const WLJS_BOOTSTRAP = (() => {
     "wljs-html-support/src/kernel.js",
     "wljs-wlx-support/src/kernel.js",
     "wljs-sharedlib-mk/dist/kernel.js",
-    "wljs-markdown-support/dist/kernel.js",
+    "wljs-markdown-support/src/kernel.js",
     "wljs-sharedlib-d3/dist/kernel.js",
     "wljs-sharedlib-three/dist/kernel.js",
     "wljs-manipulate/kernel.js",
