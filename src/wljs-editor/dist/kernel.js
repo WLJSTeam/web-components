@@ -29415,21 +29415,45 @@ wolframLanguage.of = (vocabulary, trackedQ=true) => {
 };
 
 let refreshTimeout = null;
+let refreshGeneration = 0;
 
-const reparse = () => {
+const delay = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+const reparse = async (generation) => {
     console.warn('refresh syntax highlighting');
-    trackedEditors.values().forEach((view) => reparseKeepingFragments(view));
-    refreshTimeout = null;
+
+    const editors = [...trackedEditors.values()];
+
+    for (let i = 0; i < editors.length; i++) {
+        // Stop if a newer refresh was requested.
+        if (generation !== refreshGeneration) {
+            return;
+        }
+
+        reparseKeepingFragments(editors[i]);
+
+        // Avoid waiting unnecessarily after the last editor.
+        if (i < editors.length - 1) {
+            await delay(250);
+        }
+    }
 };
 
 wolframLanguage.refresh = () => {
-  
-  
-  if (refreshTimeout) {
-    clearTimeout(refreshTimeout);
-  }
-  
-  refreshTimeout = setTimeout(reparse, 1000);
+    const generation = ++refreshGeneration;
+
+    if (refreshTimeout !== null) {
+        clearTimeout(refreshTimeout);
+    }
+
+    refreshTimeout = setTimeout(() => {
+        refreshTimeout = null;
+
+        reparse(generation).catch((error) => {
+            console.error('Failed to refresh syntax highlighting', error);
+        });
+    }, 1000);
 };
 
 wolframLanguage.reBuild = (vocabulary) => {
@@ -32447,6 +32471,12 @@ Mma.Util.UnescapeMmaUnicode = function (str) {
     });
 };
 
+Mma.Util.StripDefaultSymbolContext = function (name) {
+    if (name.startsWith("System`") || name.startsWith("Global`"))
+        return name.slice(7);
+    return name;
+};
+
 // Delete a character at a specific position from a string.
 Mma.Util.DeleteCharAt = function (string, pos) {
     return string.substr(0, pos) + string.substr(pos + 1);
@@ -32685,7 +32715,9 @@ Mma.Decode.Any = function (bits, offset, maxParts) {
         // Symbols are also just strings.
         case SYMBOL:
             var se = Mma.Decode.StringEntry(bits, offset);
-            parts.push(new Mma.Symbol(Mma.Util.UnescapeMmaUnicode(se.string)));
+            var symbolName = Mma.Util.UnescapeMmaUnicode(se.string);
+            parts.push(new Mma.Symbol(
+                Mma.Util.StripDefaultSymbolContext(symbolName)));
             offset += se.bytesRead;
             state = READY;
             break;
