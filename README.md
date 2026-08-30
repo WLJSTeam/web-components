@@ -38,7 +38,7 @@ Or use local development version:
 
 ### 2. Add Components
 
-‼️ Note, that you don't have to write them manually. All tags can be automatically generated with WLJS Notebook export option
+‼️ Note, that you don't have to write them manually. All tags are automatically generated with WLJS Notebook export (*Share*) option
 
 ```html
 <!-- Load notebook data -->
@@ -245,15 +245,7 @@ app.js (entry point)
 
 ## Supported Features
 
-- ✅ 2D/3D Graphics (D3.js, Three.js, Plotly)
-- ✅ Interactive Manipulate widgets
-- ✅ Markdown cells
-- ✅ Mathematical expressions
-- ✅ Code syntax highlighting
-- ✅ Mermaid diagrams
-- ✅ HTML/CSS outputs
-- ✅ Audio playback
-- ✅ Reveal.js presentations
+- Everything supported by a notebook application
 
 ## Browser Compatibility
 
