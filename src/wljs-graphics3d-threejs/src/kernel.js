@@ -2002,84 +2002,6 @@ g3d.LookAt.virtual = true
 
 
 const decodeTransformation = (arrays, env) => {
-
-  /*console.log(p);
-  var centering = false;
-  var centrans = [];
-
-  if (p.length === 1) {
-    p = p[0];
-  }
-  if (p.length === 1) {
-    p = p[0];
-  } else if (p.length === 2) {
-    console.log(p);
-    if (p[1] === "Center") {
-      centering = true;
-    } else {
-      console.log("NON CENTERING ISSUE!!!");
-      console.log(p);
-      centrans = p[1];
-      console.log("???");
-    }
-    //return;
-    p = p[0];
-  }
-
-  if (p.length === 3) {
-    if (typeof p[0] === "number") {
-      var dir = p;
-      var matrix = new THREE.Matrix4().makeTranslation(...dir, 1);
-    } else {
-      //make it like Matrix4
-      p.forEach((el) => {
-        el.push(0);
-      });
-      p.push([0, 0, 0, 1]);
-
-      var matrix = new THREE.Matrix4();
-      console.log("Apply matrix to group::");
-      matrix.set(...aflatten(p));
-    }
-  } else {
-    console.log(p);
-    console.error("Unexpected length matrix: :: " + p);
-  }
-
-  //Backup of params
-  var copy = Object.assign({}, env);
-  copy.mesh = group;
-  await interpretate(args[0], copy);
-  console.log('MATRIX');
-  console.log(matrix);
-
-  if (centering || centrans.length > 0) {
-    console.log("::CENTER::");
-    var bbox = new THREE.Box3().setFromObject(group);
-    console.log(bbox);
-    var center = bbox.max.clone().add(bbox.min).divideScalar(2);
-    if (centrans.length > 0) {
-      console.log("CENTRANS");
-      center = center.fromArray(centrans);
-    }
-    console.log(center);
-
-    var translate = new THREE.Matrix4().makeTranslation(
-      -center.x,
-      -center.y,
-      -center.z,
-    );
-    group.applyMatrix4(translate);
-    group.applyMatrix4(matrix);
-    translate = new THREE.Matrix4().makeTranslation(
-      center.x,
-      center.y,
-      center.z
-    );
-    group.applyMatrix4(translate);
-  } else {
-    group.applyMatrix4(matrix);
-  }*/
   let matrix = [];
 
   if (!env.local.type) {
@@ -2117,7 +2039,7 @@ const decodeTransformation = (arrays, env) => {
     break;
 
     case 'complex':
-      matrix = [...arrays[0]];
+      matrix = arrays[0].map((el) => [...el]);
       const v = [...arrays[1]];
 
       matrix[0].push(v[0]);
@@ -4077,6 +3999,19 @@ function latexLikeToHTML(raw) {
   return withSupers;
 }
 
+async function setTextAlignment(labelObject, args, env) {
+  if (args.length <= 2 || (Array.isArray(args[2]) && args[2][0] === 'Rule')) return;
+
+  let offset = await interpretate(args[2], env);
+  if (offset instanceof NumericArrayObject) offset = offset.normal();
+  if (!Array.isArray(offset) || offset.length < 2) return;
+
+  labelObject.center.set(
+    offset[0] < 0 ? 0 : offset[0] > 0 ? 1 : 0.5,
+    offset[1] > 0 ? 0 : offset[1] < 0 ? 1 : 0.5
+  );
+}
+
 g3d.Inset = async (args, env) => {
     let pos = [0,0,0];
     let size; 
@@ -4254,6 +4189,7 @@ g3d.Text = async (args, env) => {
     let labelX = new CSS2D.CSS2DObject( stext );
     stext.className = 'g3d-label';
     labelX.position.copy( new THREE.Vector3(...(await interpretate(args[1], env)))  );
+    await setTextAlignment(labelX, args, env);
     env.mesh.add(labelX);
 
     await makeEditorView(args[0], {...env, element:stext});
@@ -4279,6 +4215,7 @@ g3d.Text = async (args, env) => {
 
   const labelObject = new CSS2D.CSS2DObject( text );
   labelObject.position.copy( new THREE.Vector3(...pos) );
+  await setTextAlignment(labelObject, args, env);
   env.local.labelObject = labelObject;
 
   env.mesh.add(labelObject);
@@ -4295,6 +4232,7 @@ g3d.Text.update = async (args, env) => {
 
   env.local.text.innerHTML = latexLikeToHTML(String(label));
   env.local.labelObject.position.copy( new THREE.Vector3(...pos) );
+  await setTextAlignment(env.local.labelObject, args, env);
   env.wake();
 }
 
@@ -8162,6 +8100,7 @@ core.Image3D = async (args, env) => {
   renderer.setSize(ImageSize[0], ImageSize[1]);
   renderer.setPixelRatio(devicePixelRatio);
 
+  env.element.classList.add('wljs-canvas');
   env.element.appendChild(renderer.domElement);
 
   renderer.setClearColor(0x000000, 0);
@@ -8234,6 +8173,7 @@ core.Image3D.update = async (args, env) => {
 
 core.Image3D.destroy = (args, env) => {
   console.warn('Dispose');
+  env.element.classList.remove('wljs-canvas');
 
   if (env.local.animation) {
     cancelAnimationFrame(env.local.animation);
