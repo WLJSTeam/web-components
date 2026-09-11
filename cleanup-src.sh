@@ -25,6 +25,7 @@ find "$SRC_DIR" -type f \
   ! -name "*.eot" \
   -print -delete
 
+find "$SRC_DIR" -type d -name "node_modules" -prune -print -exec rm -rf -- {} +
 # Remove empty directories afterwards
 find "$SRC_DIR" -type d -empty -delete
 
