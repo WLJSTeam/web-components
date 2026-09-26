@@ -1260,6 +1260,41 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
 
     let gTX = undefined;
     let gRY = undefined;
+
+    const scaledTicksScale = (scale, functions) => {
+      if (functions[1] !== 'Log' || functions[2] !== 'Exp') return scale;
+
+      // Wolfram already supplies logged coordinates. Generate ticks in the
+      // original domain, then map them back without logging the geometry twice.
+      scale.ticks = count => {
+        const domain = scale.domain();
+        const decades = Math.abs(domain[domain.length - 1] - domain[0]) / Math.LN10;
+        // D3 omits minor ticks when the decade span exceeds the tick count.
+        return d3.scaleLog()
+          .domain(domain.map(Math.exp))
+          .ticks(Math.max(count ?? 10, Math.ceil(decades) + 1))
+          .map(Math.log);
+      };
+
+      scale.tickFormat = (count, formatter) => {
+        const logScale = d3.scaleLog().domain(scale.domain().map(Math.exp));
+        // Keep the normal label density even though we render every minor tick.
+        const labeledDecades = new Set(logScale.ticks(count).map(value => {
+          const exponent = Math.log10(value);
+          return Math.abs(exponent - Math.round(exponent)) < 1e-10 ? Math.round(exponent) : null;
+        }));
+        const format = logScale.tickFormat(Infinity, typeof formatter === 'function' ? value => formatter(Math.log(value)) : formatter);
+        return value => {
+          const exponent = value / Math.LN10;
+          if (Math.abs(exponent - Math.round(exponent)) > 1e-10 || !labeledDecades.has(Math.round(exponent))) return '';
+          return format(Math.exp(value));
+        };
+      };
+
+      const copy = scale.copy;
+      scale.copy = () => scaledTicksScale(copy(), functions);
+      return scale;
+    };
     
     let x = d3.scaleLinear()
       .domain(range[0])
@@ -1310,10 +1345,11 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
      
           switch(ticks[0].type) {
             case 'ScaledTicks':
-               
-               x = d3.scaleLinear()
+
+               x = scaledTicksScale(d3.scaleLinear()
                .domain(range[0]) // like [-3.926, 0]
-               .range([0, width]); 
+               .range([0, width]), ticks[0].args[0]);
+               txAxis.scale(x);
 
                //[TODO] covers only a few cases...
                const mathFunction = eval('Math.'+ticks[0].args[0][2].toLowerCase());
@@ -1338,7 +1374,12 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
                  }
                };
 
-               xAxis = d3.axisBottom(x).tickFormat(tickFormat)
+               xAxis = d3.axisBottom(x);
+               if (ticks[0].args[0][1] === 'Log' && ticks[0].args[0][2] === 'Exp') {
+                 xAxis.ticks(10, tickFormat);
+               } else {
+                 xAxis.tickFormat(tickFormat);
+               }
 
             break;
           }
@@ -1399,9 +1440,10 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
           switch(ticks[2].type) {
             case 'ScaledTicks':
                
-               x = d3.scaleLinear()
+               x = scaledTicksScale(d3.scaleLinear()
                .domain(range[0]) // like [-3.926, 0]
-               .range([0, width]); 
+               .range([0, width]), ticks[2].args[0]);
+               xAxis.scale(x);
 
                //[TODO] covers only a few cases...
                const mathFunction = eval('Math.'+ticks[2].args[0][2].toLowerCase());
@@ -1426,7 +1468,12 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
                  }
                };
 
-               txAxis = d3.axisTop(x).tickFormat(tickFormat)
+               txAxis = d3.axisTop(x);
+               if (ticks[2].args[0][1] === 'Log' && ticks[2].args[0][2] === 'Exp') {
+                 txAxis.ticks(10, tickFormat);
+               } else {
+                 txAxis.tickFormat(tickFormat);
+               }
 
             break;
           }
@@ -1524,9 +1571,10 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
           switch(ticks[1].type) {
             case 'ScaledTicks':
                
-               y = d3.scaleLinear()
+               y = scaledTicksScale(d3.scaleLinear()
                .domain(range[1]) // like [-3.926, 0]
-               .range([height, 0]); 
+               .range([height, 0]), ticks[1].args[0]);
+               ryAxis.scale(y);
 
                //[TODO] covers only a few cases...
                const mathFunction = eval('Math.'+ticks[1].args[0][2].toLowerCase());
@@ -1551,7 +1599,12 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
                  }
                };
 
-             yAxis = d3.axisLeft(y).tickFormat(tickFormat)
+             yAxis = d3.axisLeft(y);
+             if (ticks[1].args[0][1] === 'Log' && ticks[1].args[0][2] === 'Exp') {
+               yAxis.ticks(10, tickFormat);
+             } else {
+               yAxis.tickFormat(tickFormat);
+             }
 
             break;
           }
@@ -1608,12 +1661,13 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
           switch(ticks[3].type) {
             case 'ScaledTicks':
                
-               y = d3.scaleLinear()
+               y = scaledTicksScale(d3.scaleLinear()
                .domain(range[1]) // like [-3.926, 0]
-               .range([height, 0]); 
+               .range([height, 0]), ticks[3].args[0]);
+               yAxis.scale(y);
 
                //[TODO] covers only a few cases...
-               const mathFunction = eval('Math.'+ticks[1].args[0][2].toLowerCase());
+               const mathFunction = eval('Math.'+ticks[3].args[0][2].toLowerCase());
 
                const tickFormat = d => {
                  const val = mathFunction(d);
@@ -1635,7 +1689,12 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
                  }
                };
 
-               ryAxis = d3.axisRight(y).tickFormat(tickFormat)
+               ryAxis = d3.axisRight(y);
+               if (ticks[3].args[0][1] === 'Log' && ticks[3].args[0][2] === 'Exp') {
+                 ryAxis.ticks(10, tickFormat);
+               } else {
+                 ryAxis.tickFormat(tickFormat);
+               }
 
             break;
           }
@@ -1979,9 +2038,9 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
           //if (ref[0] == "List" && ref.length == 3) ref = [ref[1], ref[2]];
 
           await processLabel(ref, gRY, {...env}, (text, offsets) => {
-          g2d.Text.PutText(gRY.append("text")
-          .attr("x", 0 + offsets[0])
-              .attr("y", margin.bottom + offsets[1])
+          g2d.Text.PutText(gRY.append("text").attr("transform", "rotate(90)")
+            .attr("x", height/2 - offsets[1])
+          .attr("y", -margin.right + offsets[0] + 1.2 * axesstyle.fontsize)
               .attr("font-size", axesstyle.fontsize)
               .attr("fill", axesstyle.color)
               .attr("text-anchor", "middle")
@@ -1989,7 +2048,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
           }, (node, offsets) => {
 
           node
-          .attr("transform", `translate(${offsets[0]}, ${ margin.bottom + offsets[1]})`)
+          .attr("transform", `rotate(90) translate(${height/2 - offsets[1]}, ${ -margin.right + offsets[0] + 1.2 * axesstyle.fontsize})`)
               .attr("font-size", axesstyle.fontsize)
               .attr("fill", axesstyle.color)
               .attr("text-anchor", "middle")
@@ -3050,7 +3109,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     } else {
 
       console.log('Multiple isntances');
-      console.log(data);
+    
 
       const gr = env.svg.append("g");
       gr.attr("fill", "none")
@@ -4080,9 +4139,9 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
       let trans;
 
       if (env.local.text != text) {
+        g2d.Text.PutText(env.local.object, text, env);
         trans = env.local.object
         .maybeTransition(env.transitionType, env.transitionDuration)
-        .text(text)
         .attr("x", env.xAxis(coords[0]))
         .attr("y", env.yAxis(coords[1]))
       } else {
@@ -4101,6 +4160,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
 
 
   g2d.Text.destroy = (args, env) => {
+    if (!env.local.object) return;
     env.local.object.remove();
     delete env.local.object;
 
@@ -4852,11 +4912,11 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     }
 
     translate = [env.xAxis(translate[0]) , env.yAxis(translate[1]) ];
-    console.log(translate);
+
 
     const o = env.panZoomEntites;
 
-    console.log(env.svg.attr('transform'));
+
 
     const transform = d3.zoomIdentity.translate(dims.width, dims.height).scale(zoom).translate(-translate[0], -translate[1]);
     env.local.currentZoomTransform = transform;
@@ -5275,19 +5335,20 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
       const { bufferInfo: buf } = myLocal.state;
       const wgl = env.wgl;
       twgl.setBuffersAndAttributes(wgl.gl, wgl.programInfo, buf);
-      if (wgl.vertexTexture) {
-        if (!env.texture) throw 'Texture is not provided!';
+      if (wgl.vertexTexture && env.texture) {
         const texture = env.texture.get(wgl.gl);
         twgl.setUniforms(wgl.programInfo, {
           u_resolution: [wgl.gl.canvas.width, wgl.gl.canvas.height],
           u_texture: texture,
+          u_vertexColor: false,
           u_vertexTexture: true
         });
       } else {
         twgl.setUniforms(wgl.programInfo, {
           u_resolution: [wgl.gl.canvas.width, wgl.gl.canvas.height],
           u_color: color,
-          u_vertexColor: Boolean(wgl.vertexColors)
+          u_vertexColor: Boolean(wgl.vertexColors),
+          u_vertexTexture: false
         });
       }
       if (wgl.fallbackVertices.length > 65535) {
@@ -7564,7 +7625,8 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
         updatePos(xAxis.invert(p[0]), yAxis.invert(p[1]))
     }
   
-    object.on("mousedown", (e)=>clicked(e, d3.pointer(e)));
+    // Run before d3-zoom stops propagation, regardless of rule order.
+    object.on("mousedown", (e)=>clicked(e, d3.pointer(e)), true);
   };  
 
   g2d.EventListener.mouseup = (uid, object, env) => {
@@ -7583,9 +7645,58 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
         updatePos(xAxis.invert(p[0]), yAxis.invert(p[1]))
     }
   
-    object.on("mouseup", (e)=>clicked(e, d3.pointer(e)));
+    object.on("mouseup", function(e) {
+      // Zoom forwards releases from window; keep coordinates local to the object.
+      clicked(e, d3.pointer(e, this));
+    });
   };  
 
+  g2d.EventListener.rightclick = (uid, object, env) => {
+
+    console.log('mouseup event generator');
+    console.log(env.local);
+    const xAxis = env.xAxis;
+    const yAxis = env.yAxis;
+
+    const updatePos = throttle((x,y) => {
+      server.kernel.io.fire(uid, [x,y], 'rightclick')
+    });
+  
+    function clicked(event, p) {
+      //if (event.altKey)
+        event.preventDefault();
+        event.stopPropagation();
+        updatePos(xAxis.invert(p[0]), yAxis.invert(p[1]))
+    }
+  
+    object.on("contextmenu", function(e) {
+      clicked(e, d3.pointer(e, this));
+    });
+  }; 
+
+  g2d.EventListener.contextmenu = (uid, object, env) => {
+
+    console.log('mouseup event generator');
+    console.log(env.local);
+    const xAxis = env.xAxis;
+    const yAxis = env.yAxis;
+
+    const updatePos = throttle((x,y) => {
+      server.kernel.io.fire(uid, [x,y], 'contextmenu')
+    });
+  
+    function clicked(event, p) {
+      //if (event.altKey)
+        event.preventDefault();
+        event.stopPropagation();
+        updatePos(xAxis.invert(p[0]), yAxis.invert(p[1]))
+    }
+  
+    object.on("contextmenu", function(e) {
+      clicked(e, d3.pointer(e, this));
+    });
+  };  
+  
   g2d.EventListener.altclick = (uid, object, env) => {
 
     console.log('click event generator');
@@ -7695,7 +7806,6 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
   g2d.EventListener.mousemove = (uid, object, env) => {
 
     console.log('mouse event generator');
-    console.log(env.local);
     const xAxis = env.xAxis;
     const yAxis = env.yAxis;
 
@@ -7707,13 +7817,16 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
       updatePos(xAxis.invert(arr[0]), yAxis.invert(arr[1]))
     }
   
-    object.on("mousemove", (e) => moved(d3.pointer(e)));
+    object.on("mousemove", function(e) {
+      // Zoom forwards movement from window; keep coordinates local to the object.
+      moved(d3.pointer(e, this));
+    });
   };   
 
   g2d.EventListener.mouseover = (uid, object, env) => {
 
     console.log('mouse event generator');
-    console.log(env.local);
+
     const xAxis = env.xAxis;
     const yAxis = env.yAxis;
 
@@ -7726,6 +7839,43 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     }
   
     object.on("mouseover", e => moved(d3.pointer(e)));
+  };  
+
+  g2d.EventListener.mouseenter = (uid, object, env) => {
+
+    console.log('mouse event generator');
+    console.log(env.local);
+    const xAxis = env.xAxis;
+    const yAxis = env.yAxis;
+
+    const updatePos = throttle((x,y) => {
+      server.kernel.io.fire(uid, [x,y], 'mouseenter')
+    });
+  
+    function moved(arr) {
+      updatePos(xAxis.invert(arr[0]), yAxis.invert(arr[1]))
+    }
+  
+    object.on("mouseenter", e => moved(d3.pointer(e)));
+  };  
+  
+  
+  g2d.EventListener.mouseleave = (uid, object, env) => {
+
+    console.log('mouse event generator');
+    console.log(env.local);
+    const xAxis = env.xAxis;
+    const yAxis = env.yAxis;
+
+    const updatePos = throttle((x,y) => {
+      server.kernel.io.fire(uid, [x,y], 'mouseleave')
+    });
+  
+    function moved(arr) {
+      updatePos(xAxis.invert(arr[0]), yAxis.invert(arr[1]))
+    }
+  
+    object.on("mouseleave", e => moved(d3.pointer(e)));
   };   
 
   g2d.EventListener.zoom = (uid, object, env) => {
@@ -7738,12 +7888,23 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     });
 
     function zoom(e) {
-      console.log();
       updatePos(e.transform.k);
     }
   
     object.call(d3.zoom()
-        .on("zoom", zoom));
+        .on("zoom", zoom)
+        .on("zoom.mousemove", function(e) {
+          // d3-zoom consumes native mousemove on window during a mouse drag.
+          if (e.sourceEvent?.type !== "mousemove") return;
+          const moved = d3.select(this).on("mousemove");
+          if (moved) moved.call(this, e.sourceEvent);
+        })
+        .on("end.mouseup", function(e) {
+          // d3-zoom consumes native mouseup on window before it reaches the object.
+          if (e.sourceEvent?.type !== "mouseup") return;
+          const released = d3.select(this).on("mouseup");
+          if (released) released.call(this, e.sourceEvent);
+        }));
   }; 
 
 
