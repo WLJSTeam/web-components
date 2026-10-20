@@ -12557,6 +12557,7 @@ const tooltipPlugin = /*@__PURE__*/ViewPlugin.fromClass(class {
             this.container = document.createElement("div");
             this.container.style.position = "relative";
             this.container.className = this.view.themeClasses;
+            this.container.classList.add('dark:invert');
             this.parent.appendChild(this.container);
         }
         else {
@@ -20841,7 +20842,7 @@ function createSearchPanel(view) {
 function defaultQuery(state, fallback) {
     var _a, _b, _c, _d;
     let sel = state.selection.main;
-    let selText = sel.empty || sel.to > sel.from + 100 ? "" : state.sliceDoc(sel.from, sel.to);
+    let selText = sel.empty ? "" : state.sliceDoc(sel.from, sel.to);
     if (fallback && !selText)
         return fallback;
     let config = state.facet(searchConfigFacet);
@@ -29497,12 +29498,10 @@ const transferFiles = async (list, ev, view, handler) => {
       if (hue > 360) hue = 0;
     }, 30);
     handler.transaction(ev, view, id, list.length);
-   // server.kernel.emitt('<Event/>', `<|"Id" -> "${id}", "Length" -> ${list.length}|>`, 'Transaction');
     
     for (const file of list) {
         readFile(file, (name, result) => {
             handler.file(ev, view, id, name, result);
-            //server.kernel.emitt('id', `<|"Transaction" -> "${id}", "Name" -> "${name}", "Data" -> "${result}"|>`, 'File');
             count++;
             if (count >= list.length && view.dom) {
               if (view.dom.loadingMark) {
@@ -33442,6 +33441,7 @@ const errText = String(err);
     updateDOM(dom, view) {
       //console.log(this.visibleValue);
       //console.log(this);
+      this.DOMElement = dom;
       console.log('update widget DOM');
       dom.EditorWidget.update(this.visibleValue);
   
@@ -33457,6 +33457,8 @@ const errText = String(err);
       span.classList.add("frontend-view");
   
       span.EditorWidget = new EditorWidget$2(this.visibleValue, view, span);
+
+      this.DOMElement = span;
   
       this.reference.push({destroy: () => {
         self.destroy(span);
@@ -33687,7 +33689,7 @@ let EditorWidget$1 = class EditorWidget {
 
           env.global.element.appendChild(aa);
 
-          if(self.events) server.kernel.emitt(self.events, 'Null', 'Mounted');
+          if(self.events) server.kernel.io.fire(self.events, null, 'Mounted');
 
           return;
         }
@@ -33748,7 +33750,7 @@ let EditorWidget$1 = class EditorWidget {
           ]
         });
 
-        if(self.events) server.kernel.emitt(self.events, 'Null', 'Mounted');  
+        if(self.events) server.kernel.io.fire(self.events, null, 'Mounted');  
 
       }, (err) => {errBox(span, self, err);});
 
@@ -33803,7 +33805,7 @@ let EditorWidget$1 = class EditorWidget {
     }  
     this.editor.destroy();
 
-    if(this.events) server.kernel.emitt(this.events, 'Null', 'Destroy');
+    if(this.events) server.kernel.io.fire(this.events, null, 'Destroy');
 
     delete this.data;
   }
@@ -34064,7 +34066,7 @@ class EditorWidget {
         ]
       })});
 
-      if(self.events) server.kernel.emitt(self.events, 'Null', 'Mounted');  
+      if(self.events) server.kernel.io.fire(self.events, null, 'Mounted');  
 
     });
 
@@ -34121,7 +34123,7 @@ class EditorWidget {
     }  
     this.editors.forEach((i)=>i.destroy());
 
-    if(this.events) server.kernel.emitt(this.events, 'Null', 'Destroy');
+    if(this.events) server.kernel.io.fire(this.events, null, 'Destroy');
 
     delete this.data;
   }
@@ -34870,7 +34872,7 @@ const EditorSelected = {
   },
 
   setContent: (data, e) => {
-    const editor = e || selectedEditor;
+    let editor = e || selectedEditor;
 
     if (!editor) return;
     if (!editor.viewState) return;
@@ -34918,7 +34920,7 @@ compactWLEditor = (args) => {
     args.extensions || [],   
     minimalSetup,
     editorCustomThemeCompact,  
-    tooltips({parent: document.getElementsByTagName('main')[0] || document.body, position: "absolute"}),
+    tooltips({parent: document.getElementsByTagName('body')[0] || document.body, position: "absolute"}),
     syntaxHighlighting(defaultHighlightStyle, { fallback: false }),    
     wolframLanguage.of(EditorAutocomplete, false),
     FractionBoxWidget(compactWLEditor),
@@ -35034,7 +35036,7 @@ const wlDrop = {
       selectedEditor = view;
       if (view.dom.ocellref) {
         const channel = view.dom.ocellref.origin.channel;
-        server._emitt(channel, `<|"Channel"->"${id}", "Length"->${length}, "CellType"->"wl"|>`, 'Forwarded["CM:DropEvent"]');
+        server.io.fire(channel, {Channel: String(id), Length: length, CellType: 'wl'}, 'CM:DropEvent');
       }
     },
 
@@ -35052,7 +35054,7 @@ const wlDrop = {
       selectedEditor = view;
       if (view.dom.ocellref) {
         const channel = view.dom.ocellref.origin.channel;
-        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:InsertFilePaths"]');
+        server.io.fire(channel, {JSON: String(encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))), CellType: "wl"}, "CM:InsertFilePaths");
       }
     },
 
@@ -35060,7 +35062,7 @@ const wlDrop = {
       selectedEditor = view;
       if (view.dom.ocellref) {
         const channel = view.dom.ocellref.origin.channel;
-        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:DropFilePaths"]');
+        server.io.fire(channel, {JSON: String(encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))), CellType: "wl"}, "CM:DropFilePaths");
       }
     },
 
@@ -35072,10 +35074,10 @@ const wlDrop = {
         if (result.length > 5 * 1024 * 1024) {
           const chunks = splitStringIntoChunks(result, 5 * 1024 * 1024);
           chunks.forEach((chunk, index) => {
-            server.emitt(id, `<|"Data"->"${chunk}", "Name"->"${name}", "Chunk"->${index+1}, "Chunks"->${chunks.length}|>`, 'Chunk');
+            server.io.fire(id, {Data: String(chunk), Name: name, Chunks: chunks.length, Chunk: index+1}, "Chunk");
           });
         } else {
-          server.emitt(id, `<|"Data"->"${result}", "Name"->"${name}"|>`, 'File');
+          server.io.fire(id, {Data: result, Name: name}, "File");
         }
       }
     }
@@ -35086,7 +35088,7 @@ const wlPaste = {
     console.log(view.dom.ocellref);
     if (view.dom.ocellref) {
       const channel = view.dom.ocellref.origin.channel;
-      server._emitt(channel, `<|"Channel"->"${id}", "Length"->${length}, "CellType"->"wl"|>`, 'Forwarded["CM:PasteEvent"]');
+      server.io.fire(channel, {Channel: id, Length: length, CellType: "wl"}, "CM:PasteEvent");
     }
   },
 
@@ -35101,7 +35103,7 @@ const wlPaste = {
       selectedEditor = view;
       if (view.dom.ocellref) {
         const channel = view.dom.ocellref.origin.channel;
-        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:InsertFilePaths"]');
+        server.io.fire(channel, {JSON: encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent))), CellType: "wl"}, "CM:InsertFilePaths");
       }
   },
 
@@ -35109,7 +35111,7 @@ const wlPaste = {
       selectedEditor = view;
       if (view.dom.ocellref) {
         const channel = view.dom.ocellref.origin.channel;
-        server._emitt(channel, `<|"JSON"->"${encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent)))}", "CellType"->"wl"|>`, 'Forwarded["CM:DropFilePaths"]');
+        server.io.fire(channel, {JSON: encodeURIComponent(JSON.stringify(pathsArray.map(encodeURIComponent))), CellType: "wl"}, "CM:DropFilePaths");
       }
   },  
 
@@ -35119,10 +35121,10 @@ const wlPaste = {
       if (result.length > 5 * 1024 * 1024) {
         const chunks = splitStringIntoChunks(result, 5 * 1024 * 1024);
         chunks.forEach((chunk, index) => {
-          server.emitt(id, `<|"Data"->"${chunk}", "Name"->"${name}", "Chunk"->${index+1}, "Chunks"->${chunks.length}|>`, 'Chunk');
+          server.io.fire(id, {Data: String(chunk), Name: name, Chunk: index+1, Chunks: chunks.length}, "Chunk");
         });
       } else {
-        server.emitt(id, `<|"Data"->"${result}", "Name"->"${name}"|>`, 'File');
+        server.io.fire(id, {Data: result, Name: name}, "File");
       }
     }
   }
@@ -35133,7 +35135,7 @@ const wlCellPaste = (ev, view, content) => {
   if (view.dom.ocellref) {
     const channel = view.dom.ocellref.origin.channel;
     const uid = view.dom.ocellref.origin.uid;
-    server._emitt(channel, `<|"CellUID"->"${uid}", "Content"->"${content}", "CellType"->"wl"|>`, 'Forwarded["CM:PasteCellEvent"]');
+    server.io.fire(channel, {CellUID: String(uid), Content: String(content), CellType: "wl"}, "CM:PasteCellEvent");
   }  
 };
 
@@ -35142,7 +35144,7 @@ const wlPasteCrappy1 = (ev, view, content) => {
   if (view.dom.ocellref) {
     const channel = view.dom.ocellref.origin.channel;
     const uid = view.dom.ocellref.origin.uid;
-    server._emitt(channel, `<|"CellUID"->"${uid}", "Content"->"${encodeURIComponent(content)}", "CellType"->"wl"|>`, 'Forwarded["CM:PasteCrappy1Event"]');
+    server.io.fire(channel, {CellUID: String(uid), Content: encodeURIComponent(content), CellType: "wl"}, "CM:PasteCrappy1Event");
   }  
 };
 
@@ -35151,7 +35153,7 @@ const wlPasteCrappy2 = (ev, view, content) => {
   if (view.dom.ocellref) {
     const channel = view.dom.ocellref.origin.channel;
     const uid = view.dom.ocellref.origin.uid;
-    server._emitt(channel, `<|"CellUID"->"${uid}", "Content"->"${encodeURIComponent(content)}", "CellType"->"wl"|>`, 'Forwarded["CM:PasteCrappy2Event"]');
+    server.io.fire(channel, {CellUID: String(uid), Content: encodeURIComponent(content), CellType: "wl"}, "CM:PasteCrappy2Event");
   }  
 };
 
@@ -35261,7 +35263,7 @@ const EditorExtensionsMinimal = [
   //() => closeBrackets(),
   () => EditorView.lineWrapping,
   () => autocompletion(),
-  () => tooltips({parent: document.getElementsByTagName('main')[0] || document.body, position: "absolute"}),
+  () => tooltips({parent: document.getElementsByTagName('body')[0] || document.body, position: "absolute"}),
   () => syntaxHighlighting(defaultHighlightStyle, { fallback: false }),
   () => highlightSelectionMatches()
 ]; 
@@ -35288,7 +35290,7 @@ const EditorExtensions = [
   //() => closeBrackets(),
   () => EditorView.lineWrapping,
   () => autocompletion(),
-  () => tooltips({parent: document.getElementsByTagName('main')[0] || document.body, position: "absolute"}),
+  () => tooltips({parent: document.getElementsByTagName('body')[0] || document.body, position: "absolute"}),
   () => syntaxHighlighting(defaultHighlightStyle, { fallback: false }),
   () => highlightSelectionMatches(),
   () => cellTypesHighlight,
@@ -35351,7 +35353,7 @@ const EditorExtensions = [
   (self, initialLang) => EditorView.updateListener.of((v) => { 
     if (v.docChanged) {
       //TODO: TOO SLOW FIXME!!!
-      self.origin.save(encodeURIComponent(v.state.doc.toString()));
+      self.origin.save(v.state.doc.toString());
     }
     if (v.selectionSet) {
       //console.log('selected editor:');
@@ -35395,8 +35397,9 @@ class CodeMirrorCell {
     }
 
 
-    setContent (data) {
+    setContent (data, visQOnly = false) {
       console.warn('content mutation!');
+      if (visQOnly) console.log('prevent saving');
       if (!this.editor.viewState) return;
   
   const editor = this.editor;
@@ -35409,6 +35412,7 @@ class CodeMirrorCell {
         , insert: ''}
     });  */ //FIXED already
 
+      if (visQOnly === true) this.origin?.ignoreNextUpdate();
       this.editor.dispatch({
           changes: {
             from: 0,
@@ -35623,11 +35627,11 @@ class CodeMirrorCell {
         }
 
         console.log('editor view emitt data: '+data); //[FIXME] move to a new API
-        server.kernel.emitt(options.Event, '"'+data.replaceAll('\\\"', '\\\\\"').replaceAll('\"', '\\"')+'"', 'Input');
+        server.kernel.io.fire(options.Event, String(data), 'Input');
       };
 
       evalFunction = () => {
-        server.kernel.emitt(options.Event, '"'+state.replaceAll('\\\"', '\\\\\"').replaceAll('\"', '\\"')+'"', 'Evaluate');
+        server.kernel.io.fire(options.Event, String(state), 'Evaluate');
       };
       
     }
@@ -35722,6 +35726,7 @@ class CodeMirrorCell {
       linter: linter,
       EditorView: EditorView,
       EditorState: EditorState,
+      closeCompletion: closeCompletion,
       highlightSpecialChars: highlightSpecialChars,
       syntaxHighlighting: syntaxHighlighting,
       defaultHighlightStyle: defaultHighlightStyle,

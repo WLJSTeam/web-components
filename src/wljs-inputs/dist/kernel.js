@@ -594,6 +594,7 @@ atoms.Blank = async (data, contextEnv, element, store, hashFunction = interpreta
     } catch(err) {
       console.warn('Creating FE object by id '+hash);
       await server.kernel.io.fetch('CoffeeLiqueur`Extensions`InputsOutputs`Private`DatasetMakeBox', [JSON.stringify(data), hash]);
+      console.warn('Waiting for '+hash);
       storage = await obj.get();
     }
     
@@ -874,7 +875,9 @@ core.Dataset = async (args, env) => {
   const data = await interpretate(args[0], {...env, hold:true, context: datasetContext});
   
   let hashFunction = interpretate.hash;
-  if (env?.options?.HashFunction == 'V2') hashFunction = interpretate.hashv2;
+  if (env?.options?.HashFunction == 'V2') {
+    hashFunction = interpretate.hashv2;
+  }
   
 
   
