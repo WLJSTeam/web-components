@@ -21,7 +21,7 @@ const ESM_URLS_IN_ORDER = [
 	"common\/extension.js",
 	"Views\/Common\/Assets\/wrappers.js",
 	"wljs-sharedlib-mk\/dist\/kernel.js",
-	"wljs-editor\/dist\/kernel.js",
+	"wljs-editor\/dist\/kernel.min.js",
 	"wljs-editor\/src\/boxes.js",
 	"wljs-editor\/src\/objects.js",
 	"wljs-editor\/src\/autocomplete.js",
