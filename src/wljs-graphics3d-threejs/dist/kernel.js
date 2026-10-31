@@ -69,6 +69,78 @@ g3d.All = () => 'All';
 let THREE;
 let MathUtils;
 
+const registerDynamicMaterial = (env, material) => {
+  const materials = Array.isArray(material) ? material : [material];
+
+  if (!env.local.dynamicMaterials) env.local.dynamicMaterials = new Set();
+
+  for (const item of materials) {
+    if (item) env.local.dynamicMaterials.add(item);
+  }
+
+  const supportsColor = materials.some(item =>
+    item?.color?.isColor && item.vertexColors !== true
+  );
+
+  if (supportsColor && env.colorRefs) {
+    env.colorRefs[env.root.uid] = env.root;
+  }
+  if (materials.some(Boolean) && env.opacityRefs) {
+    env.opacityRefs[env.root.uid] = env.root;
+  }
+
+  return material;
+};
+
+const updateDynamicMaterialColor = (args, env) => {
+  for (const material of env.local.dynamicMaterials || []) {
+    if (material.color?.isColor && material.vertexColors !== true) {
+      material.color.copy(env.color);
+    }
+  }
+  env.wake(true);
+};
+
+const updateDynamicMaterialOpacity = (args, env) => {
+  const transparent = env.opacity < 1;
+
+  for (const material of env.local.dynamicMaterials || []) {
+    if (material.transparent !== transparent) {
+      material.transparent = transparent;
+      material.needsUpdate = true;
+    }
+    material.opacity = env.opacity;
+  }
+  env.wake(true);
+};
+
+const unregisterDynamicMaterials = (env) => {
+  if (env.colorRefs) delete env.colorRefs[env.root.uid];
+  if (env.opacityRefs) delete env.opacityRefs[env.root.uid];
+};
+
+const enableDynamicMaterialUpdates = (primitive) => {
+  if (!primitive || primitive.dynamicMaterialUpdates) return;
+
+  const destroy = primitive.destroy;
+
+  primitive.updateColor = updateDynamicMaterialColor;
+  primitive.updateOpacity = updateDynamicMaterialOpacity;
+  primitive.destroy = async (args, env) => {
+    unregisterDynamicMaterials(env);
+
+    try {
+      if (destroy) await destroy(args, env);
+    } finally {
+      for (const material of env.local.dynamicMaterials || []) {
+        material.dispose();
+      }
+      env.local.dynamicMaterials?.clear();
+    }
+  };
+  primitive.dynamicMaterialUpdates = true;
+};
+
 /**
  * Create a set of tick‐marks around the boundary of a rectangle
  * instead of drawing every grid line.
@@ -306,8 +378,41 @@ g3d.RGBColor = async (args, env) => {
   const b = await interpretate(a[2], env);
 
   env.color = new THREE.Color(r, g, b);
+
+  if (env.root.child) {
+    const refs = {};
+    env.exposed.colorRefs = refs;
+    env.local.refs = refs;
+  }
+
+  env.exposed.color = env.color;
   return env.color;
 };
+
+g3d.RGBColor.update = async (args, env) => {
+  let a = [...args];
+
+  if (args.length === 1) {
+    a = await interpretate(args[0], env);
+    if (NumericArrayObject.Q(a)) a = a.normal();
+  }
+
+  const color = new THREE.Color(
+    await interpretate(a[0], env),
+    await interpretate(a[1], env),
+    await interpretate(a[2], env)
+  );
+
+  for (const ref of Object.values(env.local.refs || {})) {
+    ref.execute({method: 'updateColor', color});
+  }
+};
+
+g3d.RGBColor.destroy = (args, env) => {
+  delete env.local.refs;
+};
+
+g3d.RGBColor.virtual = true;
 
 g3d.GrayLevel = async (args, env) => { 
   env.colorInherit = false;
@@ -327,12 +432,34 @@ g3d.Roughness = (args, env) => {
   env.roughness = o;  
 };
 
-g3d.Opacity = (args, env) => {
-  var o = interpretate(args[0], env);
+g3d.Opacity = async (args, env) => {
+  const o = await interpretate(args[0], env);
   if (typeof o !== "number") console.error("Opacity must have number value!");
-  console.log(o);
   env.opacity = o;
+  env.exposed.opacity = o;
+
+  if (env.root.child) {
+    const refs = {};
+    env.exposed.opacityRefs = refs;
+    env.local.refs = refs;
+  }
+
+  return o;
 };
+
+g3d.Opacity.update = async (args, env) => {
+  const opacity = await interpretate(args[0], env);
+
+  for (const ref of Object.values(env.local.refs || {})) {
+    ref.execute({method: 'updateOpacity', opacity});
+  }
+};
+
+g3d.Opacity.destroy = (args, env) => {
+  delete env.local.refs;
+};
+
+g3d.Opacity.virtual = true;
 
 g3d.Scale = async (args, env) => {
   // args: [object, scale, center?]
@@ -475,6 +602,7 @@ g3dComplex.Tube = async (args, env) => {
     matte: env.matte
     
   });
+  registerDynamicMaterial(env, material);
 
   if (!VariableTube) {
     VariableTube = await import('./index-2643bfa9.js');
@@ -488,7 +616,6 @@ g3dComplex.Tube = async (args, env) => {
   
     //geometry.dispose();
   
-    material.dispose();  
 };
 
 g3dComplex.Tube.update = () => console.error('Tube inside Complex does not support updates');
@@ -562,6 +689,7 @@ g3d.Cone = async (args, env) => {
     matte: env.matte
     
   });
+  registerDynamicMaterial(env, material);
 
   if (!VariableTube) {
     VariableTube = await import('./index-2643bfa9.js');
@@ -575,7 +703,6 @@ g3d.Cone = async (args, env) => {
   
     //geometry.dispose();
   
-  material.dispose();
 };
 
 g3d.Cone.update = async (args, env) => {
@@ -665,6 +792,7 @@ g3d.Tube = async (args, env) => {
     matte: env.matte
     
   });
+  registerDynamicMaterial(env, material);
 
   if (!VariableTube) {
     VariableTube = await import('./index-2643bfa9.js');
@@ -678,7 +806,6 @@ g3d.Tube = async (args, env) => {
   
     //geometry.dispose();
   
-  material.dispose();
 };
 
 g3d.Tube.update = async (args, env) => {
@@ -756,6 +883,7 @@ thickness: env.materialThickness,
     matte: env.matte
     
   });
+  registerDynamicMaterial(env, material);
 
   const geometry = new THREE.CylinderGeometry(radius, radius, length, 32, 1);
 
@@ -800,7 +928,6 @@ thickness: env.materialThickness,
 
   geometry.dispose();
   conegeometry.dispose();
-  material.dispose();
 
   return group;
 };
@@ -898,6 +1025,7 @@ g3d.Arrow = async (args, env) => {
       opacity: env.opacity,
       transparent: env.opacity < 1.0 ? true : false
     });
+    registerDynamicMaterial(env, material);
     const line = new THREE.Line(geometry, material);
 
     env.local.line = line;
@@ -924,6 +1052,7 @@ g3d.Arrow = async (args, env) => {
     len,
     env.color
   );
+  registerDynamicMaterial(env, [arrowHelper.line.material, arrowHelper.cone.material]);
   //arrowHelper.castShadow = env.shadows;
   //arrowHelper.receiveShadow = env.shadows;
    
@@ -1038,6 +1167,7 @@ g3dComplex.Point = async (args, env) => {
   } else {
     material = new THREE.PointsMaterial( { color: env.color, opacity: env.opacity, size: 3.1 * env.pointSize / (0.011111111111111112)} );
   }  
+  registerDynamicMaterial(env, material);
 
   env.local.material = material;
   
@@ -1081,6 +1211,7 @@ g3d.Point = async (args, env) => {
   let material;
   
   material = new THREE.PointsMaterial( { color: env.color, opacity: env.opacity, size: 3.1 * env.pointSize / (0.011111111111111112)} );
+  registerDynamicMaterial(env, material);
   
   
   const points = new THREE.Points( geometry, material );
@@ -1152,6 +1283,7 @@ g3d.Locator = async (args, env) => {
     transparent: env.opacity < 1.0,
     depthTest: false
   });
+  registerDynamicMaterial(env, material);
 
   env.local.geometry = makeLocator3DGeometry(Math.max(0.05, env.pointSize || 0.08) * 3);
   env.local.material = material;
@@ -1209,6 +1341,8 @@ thickness: env.materialThickness,
     map: env.texture || null
   });
 
+  registerDynamicMaterial(env, material);
+
   function addSphere(cr) {
     const origin = new THREE.Vector4(...cr, 1);
     const geometry = new THREE.SphereGeometry(radius, 40, 40);
@@ -1243,8 +1377,6 @@ thickness: env.materialThickness,
       env.local.object.push(addSphere(el));
     });
   } 
-
-  material.dispose();
 
   return env.local.object;
 };
@@ -1365,6 +1497,7 @@ g3d.Cube = async (args, env) => {
     map: env.texture || null
   });
 
+  registerDynamicMaterial(env, material);
   const cube = new THREE.Mesh(geometry, material);
 
   // Apply transformations
@@ -1380,8 +1513,6 @@ g3d.Cube = async (args, env) => {
   env.local.box = cube;
 
   geometry.dispose();
-  material.dispose();
-
   return cube;
 };
 
@@ -1511,6 +1642,8 @@ thickness: env.materialThickness,
     
   });
 
+  registerDynamicMaterial(env, material);
+
   //material.side = THREE.DoubleSide;
 
   const cube = new THREE.Mesh(geometry, material);
@@ -1533,8 +1666,6 @@ thickness: env.materialThickness,
   env.local.box = cube;
 
   geometry.dispose();
-  material.dispose();
-
   return cube;
 };
 
@@ -1679,6 +1810,7 @@ matte: env.matte
     
   });
 
+  registerDynamicMaterial(env, material);
   console.log(coordinates);
 
   // edge from X to Y
@@ -1810,6 +1942,7 @@ g3d.Octahedron = async (args, env) => {
     
   });
 
+  registerDynamicMaterial(env, material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(position);
   mesh.scale.set(scale, scale, scale);
@@ -1821,7 +1954,6 @@ g3d.Octahedron = async (args, env) => {
 
 
   geometry.dispose();
-  material.dispose();
   return mesh;
 };
 
@@ -1872,6 +2004,7 @@ g3d.Tetrahedron = async (args, env) => {
     
   });
 
+  registerDynamicMaterial(env, material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(position);
   mesh.scale.set(scale, scale, scale);
@@ -1883,7 +2016,6 @@ g3d.Tetrahedron = async (args, env) => {
 
 
   geometry.dispose();
-  material.dispose();
   return mesh;
 };
 
@@ -1934,6 +2066,7 @@ g3d.Icosahedron = async (args, env) => {
     
   });
 
+  registerDynamicMaterial(env, material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(position);
   mesh.scale.set(scale, scale, scale);
@@ -1944,7 +2077,6 @@ g3d.Icosahedron = async (args, env) => {
   env.mesh.add(mesh);
 
   geometry.dispose();
-  material.dispose();
   return mesh;
 };
 
@@ -2617,6 +2749,7 @@ matte: env.matte
     
   });
 
+  registerDynamicMaterial(env, material);
   console.log(coordinates);
 
   // edge from X to Y
@@ -2692,6 +2825,8 @@ thickness: env.materialThickness,
     map: env.texture || null
   });
 
+  registerDynamicMaterial(env, material);
+
   function addSphere(cr) {
     const origin = new THREE.Vector3(...cr);
     const geometry = new THREE.SphereGeometry(radius, 40, 40);
@@ -2727,8 +2862,6 @@ thickness: env.materialThickness,
     env.local.object = [addSphere([ref[index], ref[index+1], ref[index+2]])];
   } 
 
-
-  material.dispose();
 
   return env.local.object;
 };
@@ -3312,6 +3445,7 @@ thickness: env.materialThickness,
   
     //poly.frustumCulled = false;
     env.mesh.add(poly);
+    registerDynamicMaterial(env, material);
     env.local.material = material;
     env.local.poly = poly;
 
@@ -3330,8 +3464,14 @@ g3dComplex.Polygon.reassign = (v, local) => {
       if (v.colored)
         g.setAttribute( 'color', v.colors );
       
-      if (local.normals)
+      if (local.normals) {
         g.setAttribute('normal', v.normals);
+      } else {
+        // computeVertexNormals() reuses an existing normal attribute even when
+        // the position attribute has grown. Remove the stale attribute so the
+        // vertex update handler recreates it with the new capacity.
+        g.deleteAttribute('normal');
+      }
 
       //g.setIndex(local.indexes);
 
@@ -3772,7 +3912,9 @@ g3dComplex.Polygon.update = async (args, env) => {
       
 
 
-    //if (!env.local.normals) env.local.geometry.computeVertexNormals();
+    // The GraphicsComplex vertex handler runs before the Polygon indices are
+    // updated. Recompute implicit normals again against the new topology.
+    if (!env.local.normals) env.local.geometry.computeVertexNormals();
 
     
     env.local.geometry.computeBoundingBox();
@@ -3948,6 +4090,7 @@ g3d.Dodecahedron = async (args, env) => {
     matte: env.matte
   });
 
+  registerDynamicMaterial(env, material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(position);
   mesh.scale.set(scale, scale, scale);
@@ -3959,8 +4102,6 @@ g3d.Dodecahedron = async (args, env) => {
   env.mesh.add(mesh);
 
   geometry.dispose();
-  material.dispose();
-
   return mesh;
 };
 
@@ -4012,13 +4153,12 @@ matte: env.matte
       
     });
 
+    registerDynamicMaterial(env, material);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.receiveShadow = env.shadows;
     mesh.castShadow = env.shadows;
     env.mesh.add(mesh);
     geometry.dispose();
-    material.dispose();
-
     return mesh;
   }
 };
@@ -4242,6 +4382,13 @@ g3d.Text = async (args, env) => {
     await setTextAlignment(labelX, args, env);
     env.mesh.add(labelX);
 
+    if (!env.colorInherit) stext.style.color = env.color.getStyle();
+    if (env.opacity !== undefined) stext.style.opacity = env.opacity;
+    env.local.text = stext;
+    env.local.labelObject = labelX;
+    if (env.colorRefs) env.colorRefs[env.root.uid] = env.root;
+    if (env.opacityRefs) env.opacityRefs[env.root.uid] = env.root;
+
     await makeEditorView(args[0], {...env, element:stext});
     return labelX;
   }
@@ -4250,6 +4397,7 @@ g3d.Text = async (args, env) => {
   if (env.fontSize) text.style.fontSize = env.fontSize + 'px';
   if (env.fontFamily) text.style.fontFamily = env.fontFamily ;
   if (!env.colorInherit) text.style.color = env.color.getStyle();
+  if (env.opacity !== undefined) text.style.opacity = env.opacity;
 
   //text.style.color = 'rgb(' + atom[ 3 ][ 0 ] + ',' + atom[ 3 ][ 1 ] + ',' + atom[ 3 ][ 2 ] + ')';
   
@@ -4269,6 +4417,9 @@ g3d.Text = async (args, env) => {
   env.local.labelObject = labelObject;
 
   env.mesh.add(labelObject);
+
+  if (env.colorRefs) env.colorRefs[env.root.uid] = env.root;
+  if (env.opacityRefs) env.opacityRefs[env.root.uid] = env.root;
 };
 
 g3d.Text.update = async (args, env) => { 
@@ -4286,7 +4437,20 @@ g3d.Text.update = async (args, env) => {
   env.wake();
 };
 
-g3d.Text.destroy = () => {
+g3d.Text.updateColor = (args, env) => {
+  env.local.text.style.color = env.color.getStyle();
+  env.wake(true);
+};
+
+g3d.Text.updateOpacity = (args, env) => {
+  env.local.text.style.opacity = env.opacity;
+  env.wake(true);
+};
+
+g3d.Text.destroy = (args, env) => {
+  unregisterDynamicMaterials(env);
+  env.local.labelObject?.removeFromParent();
+  env.local.text?.remove();
 
 };
 
@@ -4459,6 +4623,7 @@ g3dComplex.Line = async (args, env) => {
   const indexParts = normalizeComplexLineIndices(raw);
 
   const material = makeComplexLineMaterial(env);
+  registerDynamicMaterial(env, material);
 
   env.local.parts = [];
   env.local.material = material;
@@ -4673,6 +4838,7 @@ g3d.Line = async (args, env) => {
           opacity: env.opacity,
           transparent: env.opacity < 1.0 ? true : false
         });        
+        registerDynamicMaterial(env, material);
 
         for (const p of points) {
           geometry = new THREE.BufferGeometry();
@@ -4689,7 +4855,6 @@ g3d.Line = async (args, env) => {
           env.mesh.add(line);          
         }
 
-        material.dispose();
         //3D will
 
         return;
@@ -4709,6 +4874,7 @@ g3d.Line = async (args, env) => {
       opacity: env.opacity,
       transparent: env.opacity < 1.0 ? true : false
     });
+    registerDynamicMaterial(env, material);
     const line = new THREE.Line(geometry, material);
 
     env.local.line = line;
@@ -4750,6 +4916,32 @@ g3d.Line.destroy = async (args, env) => {
 };
 
 g3d.Line.virtual = true;
+
+[
+  g3dComplex.Tube,
+  g3d.Cone,
+  g3d.Tube,
+  g3d.TubeArrow,
+  g3d.Arrow,
+  g3dComplex.Point,
+  g3d.Point,
+  g3d.Locator,
+  g3d.Sphere,
+  g3d.Cube,
+  g3d.Cuboid,
+  g3d.Parallelepiped,
+  g3d.Cylinder,
+  g3d.Octahedron,
+  g3d.Tetrahedron,
+  g3d.Icosahedron,
+  g3dComplex.Cylinder,
+  g3dComplex.Sphere,
+  g3dComplex.Polygon,
+  g3d.Dodecahedron,
+  g3d.Polyhedron,
+  g3dComplex.Line,
+  g3d.Line
+].forEach(enableDynamicMaterialUpdates);
 
 g3d.ImageSize = () => "ImageSize";
 g3d.Background = () => "Background";
@@ -5346,25 +5538,179 @@ g3d.MeshFogMaterial = async (args, env) => {
 
 let TransformControls = false;
 
+const raycastEvent = (event, object, env, raycaster, pointer) => {
+  // Pointer events are attached to the CSS2D overlay because it also drives
+  // the controls, but NDC must be calculated against the WebGL viewport. The
+  // overlay can have a different offset in centered/slide layouts.
+  const domElement = env.global.renderer?.domElement || env.global.domElement;
+  const camera = env.global.camera || env.camera;
+
+  if (!domElement || !camera || !object) return null;
+
+  const bounds = domElement.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return null;
+
+  // Three.js defaults Line and Points raycasting to a threshold of one world
+  // unit. That is large enough for a unit-sized plot's box and axes to mask
+  // the surface below them. Convert roughly two CSS pixels to world units so
+  // thin primitives remain selectable without swallowing nearby meshes.
+  if (raycaster.wljsPointerThreshold === undefined) {
+    const plotBounds = new THREE.Box3().setFromObject(
+      env.global.plotGroup || object
+    );
+    const plotSize = plotBounds.getSize(new THREE.Vector3());
+    const plotSpan = Math.max(plotSize.x, plotSize.y, plotSize.z);
+    const viewportSpan = Math.max(1, Math.min(bounds.width, bounds.height));
+    const threshold = Number.isFinite(plotSpan) && plotSpan > 0
+      ? 2 * plotSpan / viewportSpan : 0.01;
+
+    raycaster.params.Line.threshold = threshold;
+    raycaster.params.Points.threshold = threshold;
+    raycaster.wljsPointerThreshold = threshold;
+  }
+
+  pointer.set(
+    ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+    -((event.clientY - bounds.top) / bounds.height) * 2 + 1
+  );
+
+  raycaster.setFromCamera(pointer, camera);
+
+  const intersections = Array.isArray(object)
+    ? raycaster.intersectObjects(object, true)
+    : raycaster.intersectObject(object, true);
+
+  if (!intersections.length) return null;
+
+  // Graphics3D applies centering, axis conversion and BoxRatios to its root
+  // group. Convert the world-space hit back to the coordinates used by the
+  // Wolfram expression before sending it to the kernel.
+  const point = intersections[0].point.clone();
+  if (env.global.plotGroup) env.global.plotGroup.worldToLocal(point);
+
+  return point.toArray();
+};
+
+const pointerGestureState = (env) => {
+  if (env.global.pointerGestureState) {
+    return env.global.pointerGestureState;
+  }
+
+  const state = {
+    pointers: new Map(),
+    suppressClickUntil: 0,
+    suppressedClickEvent: null
+  };
+  const domElement = env.global.domElement;
+  const dragThresholdSq = 4 * 4;
+
+  domElement.addEventListener('pointerdown', (event) => {
+    state.suppressClickUntil = 0;
+    state.suppressedClickEvent = null;
+    state.pointers.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+      dragged: false
+    });
+  }, true);
+
+  domElement.addEventListener('pointermove', (event) => {
+    const pointer = state.pointers.get(event.pointerId);
+    if (!pointer || pointer.dragged) return;
+
+    const dx = event.clientX - pointer.x;
+    const dy = event.clientY - pointer.y;
+    if (dx * dx + dy * dy > dragThresholdSq) pointer.dragged = true;
+  }, true);
+
+  domElement.addEventListener('pointerup', (event) => {
+    const pointer = state.pointers.get(event.pointerId);
+    if (pointer?.dragged) {
+      // A native click, when generated, follows pointerup immediately. Keep
+      // this bounded so a drag without a click cannot suppress a later click.
+      state.suppressClickUntil = event.timeStamp + 250;
+    }
+    state.pointers.delete(event.pointerId);
+  }, true);
+
+  domElement.addEventListener('pointercancel', (event) => {
+    state.pointers.delete(event.pointerId);
+  }, true);
+
+  env.global.pointerGestureState = state;
+  return state;
+};
+
+const isGestureClick = (event, state) => {
+  // Several object/scene listeners can receive the same DOM event. Once one
+  // marks it as suppressed, all of them must make the same decision.
+  if (state.suppressedClickEvent === event) return true;
+  if (state.suppressClickUntil === 0) return false;
+  if (event.timeStamp > state.suppressClickUntil) return false;
+
+  state.suppressedClickEvent = event;
+  state.suppressClickUntil = 0;
+  return true;
+};
+
+const pointerEventListener = (eventName) => (uid, object, env) => {
+  // A scene-level listener should pick the rendered graphic, not Epilog
+  // annotations (such as a locator sphere) or decorations added afterwards.
+  // The Graphics3D wrapper installs this listener at the start of Epilog, so
+  // taking a shallow snapshot here preserves the base plot objects while the
+  // recursive raycast still reaches their meshes.
+  const plotObjects = env.global.plotGroup
+    ? [...env.global.plotGroup.children] : [];
+  const target = object || (plotObjects.length
+    ? plotObjects : env.global.plotGroup || env.global.scene);
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  const gestureState = eventName === 'click'
+    ? pointerGestureState(env) : null;
+  const updatePosition = throttle((point) => {
+    server.kernel.io.fire(uid, point, eventName);
+  });
+
+  env.global.domElement.addEventListener(eventName, (event) => {
+    if (gestureState && isGestureClick(event, gestureState)) return;
+
+    // Match Graphics2D: a regular click does not also handle Alt-clicks.
+    if (eventName === 'click' && event.altKey) return;
+
+    const point = raycastEvent(event, target, env, raycaster, pointer);
+    if (point) updatePosition(point);
+  });
+};
+
 g3d.EventListener = async (args, env) => {
   const rules = await interpretate(args[1], env);
 
   const copy = {...env};
 
-  let object = await interpretate(args[0], env);
-  if (Array.isArray(object)) object = object[0];
+  let object = await interpretate(args[0], copy);
+  if (Array.isArray(object) && object.length === 1) object = object[0];
 
-  if (!TransformControls) {
+  const needsTransformControls = rules.some((rule) =>
+    rule.lhs === 'transform' || rule.lhs === 'drag'
+  );
+
+  if (needsTransformControls && !TransformControls) {
     await interpretate.shared.THREETransformControls.load();
     TransformControls = interpretate.shared.THREETransformControls.TransformControls;
     //TransformControls = (await import('three/addons/controls/TransformControls.js')).TransformControls;
   }
   rules.forEach((rule)=>{
-    g3d.EventListener[rule.lhs](rule.rhs, object, copy);
+    const target = Array.isArray(object) &&
+      (rule.lhs === 'transform' || rule.lhs === 'drag')
+      ? object[0] : object;
+    g3d.EventListener[rule.lhs](rule.rhs, target, copy);
   });
 
   return null;
 };
+
+g3d.EventListener.click = pointerEventListener('click');
+g3d.EventListener.mousemove = pointerEventListener('mousemove');
 
 g3d.EventListener.transform = (uid, object, env) => {
   console.log(env);
@@ -6168,6 +6514,7 @@ if (PathRendering) {
 
 
 const group = new THREE.Group();
+env.global.plotGroup = group;
 
 const allowLerp = false;
 if (options.TransitionType) {
@@ -6241,6 +6588,7 @@ env.global.renderer = renderer;
 env.global.labelRenderer = labelRenderer;
 env.global.domElement = domElement;
 env.global.scene    = scene;
+env.global.camera   = activeCamera;
 envcopy.camera   = activeCamera;
 //activeCamera.layers.enableAll();
 
@@ -7116,6 +7464,7 @@ function updateCamera( cameraProjection ) {
   controls.update();
 
   env.local.camera   = activeCamera;
+  env.global.camera   = activeCamera;
   envcopy.camera   = activeCamera;
 
 
@@ -7691,7 +8040,7 @@ g3d['CoffeeLiqueur`Extensions`Graphics3D`Private`SampledColorFunction'] = async 
   return { colors, type };
 };
 
-core.Image3D = async (args, env) => {
+const initializeImage3D = async (args, env) => {
   await interpretate.shared.THREE.load();
 
   if (!THREE) {
@@ -8054,9 +8403,35 @@ core.Image3D = async (args, env) => {
   animationLoop();
 };
 
+core.Image3D = (args, env) => {
+  env.local.initialized = false;
+  env.local.destroyed = false;
+  delete env.local.initError;
+
+  const initialization = initializeImage3D(args, env);
+
+  env.local.initComplete = initialization.then(
+    (result) => {
+      env.local.initialized = true;
+      return result;
+    },
+    (error) => {
+      env.local.initError = error;
+    }
+  );
+
+  return initialization;
+};
+
 core.Image3D.virtual = true;
 
 core.Image3D.update = async (args, env) => {
+  if (env.local.initComplete) {
+    await env.local.initComplete;
+  }
+
+  if (env.local.destroyed || env.local.initError || env.local.initialized === false) return;
+
   let data = await interpretate(args[0], env);
 
   if (Array.isArray(data)) {
@@ -8069,11 +8444,12 @@ core.Image3D.update = async (args, env) => {
   const converted = imageTypes[env.local.typeName].convert(data);
   env.local.volumeTexture.image.data.set(converted.data);
   env.local.volumeTexture.needsUpdate = true;
-  env.local?.wakeFunction();
+  env.local.wakeFunction?.();
 };
 
 core.Image3D.destroy = (args, env) => {
   console.warn('Dispose');
+  env.local.destroyed = true;
   env.element.classList.remove('wljs-canvas');
 
   if (env.local.animation) {
