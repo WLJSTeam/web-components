@@ -6,7 +6,25 @@
     if (arr[0][0][0].length === undefined)  return 3;
   } 
 
+  const getAutoscaledBBox = (c) => {
+    const ignored = Array.from(
+      c.node().querySelectorAll('[data-autoscale-ignore="true"]')
+    );
   
+    const previousDisplay = ignored.map(node => node.style.display);
+  
+    ignored.forEach(node => {
+      node.style.display = 'none';
+    });
+  
+    try {
+      return c.node().getBBox();
+    } finally {
+      ignored.forEach((node, index) => {
+        node.style.display = previousDisplay[index];
+      });
+    }
+  };
   
   core.PlotInteractivity = () => 'PlotInteractivity'
 
@@ -1114,6 +1132,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     // else
       svg = d3.select(container).append("svg");
       svg.node().classList.add('focus:outline-none');
+      env.containerSVG = svg.node();
 
     if ('Background' in options) {
       
@@ -2190,7 +2209,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
         const xsize = ImageSize[0] - (margin.left + margin.right);
         const ysize = ImageSize[1] - (margin.top + margin.bottom);
 
-        let box = env.svg.node().getBBox();
+        let box = getAutoscaledBBox(env.svg);
 
         console.log([xsize, ysize]);
         console.log(box);
@@ -2684,11 +2703,12 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
           const scaleX = size[0] / box.width;
           const scaleY = size[1] / box.height;
           const inner = foreignObject.node().firstChild;
+          const minScale = Math.min(scaleX, scaleY)
           if (inner) {
             inner.style.transformOrigin = '0 0';
-            inner.style.transform = `scale(${scaleX}, ${scaleY})`;
+            inner.style.transform = `scale(${minScale})`;
           }
-          box = { width: size[0], height: size[1] };
+          box = { width: box.width * minScale, height: box.height * minScale };
         } else {
           console.log('size matches');
         }
@@ -2736,6 +2756,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
 
           default:
             opos = [box.width/2, box.height/2];
+            foreignObject.node().style.textAlign = "center";
         }
       }
       
@@ -4416,7 +4437,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     
 
 
-    env.local.foreignObject = env.svg.append('foreignObject').attr('width', env.clipWidth).attr('height', env.clipHeight);
+    env.local.foreignObject = env.svg.append('foreignObject').attr('width', env.clipWidth).attr('height', env.clipHeight).attr('data-autoscale-ignore', 'true');
     const canvas = env.local.foreignObject.append('xhtml:canvas');
     canvas.attr('width', Math.round(env.clipWidth*dpi)).attr('height', Math.round(env.clipHeight*dpi));
     const gl = canvas.node().getContext('webgl', {
@@ -6921,6 +6942,7 @@ return object;
 
     visual.append("circle")
       .attr("r", 8)
+      .attr("fill", "transparent")
       .attr("vector-effect", "non-scaling-stroke");
 
     visual.append("path")
@@ -7684,22 +7706,21 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     });
   };  
   
-  g2d.EventListener.altclick = (uid, object, env) => {
-
-    console.log('click event generator');
+  const modifierClickListener = (eventName, modifierKey) => (uid, object, env) => {
+    console.log(`${eventName} event generator`);
     console.log(env.local);
     const xAxis = env.xAxis;
     const yAxis = env.yAxis;
 
     const updatePos = throttle((x,y) => {
-      server.kernel.io.fire(uid, [x,y], 'altclick')
+      server.kernel.io.fire(uid, [x,y], eventName)
     });
-  
+
     function clicked(event, p) {
-      if (event.altKey)
+      if (event[modifierKey])
         updatePos(xAxis.invert(p[0]), yAxis.invert(p[1]))
     }
-  
+
     if ('click' in object.on_list) {
       object.on_list.click.push((e)=>clicked(e, d3.pointer(e)));
     } else {
@@ -7710,9 +7731,13 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
         for (let i=0; i<object.on_list.click.length; ++i) object.on_list.click[i](e)
       });
     }
-  };  
+  };
 
-  g2d.EventListener.capturekeydown = (uid, object, env) => {
+  g2d.EventListener.altclick = modifierClickListener('altclick', 'altKey');
+  g2d.EventListener.metaclick = modifierClickListener('metaclick', 'metaKey');
+  g2d.EventListener.shiftclick = modifierClickListener('shiftclick', 'shiftKey');
+
+  const capturedKeyListener = (eventNames, channel, formatEvent) => (uid, object, env) => {
     //console.error('You cannot listen keys from the SVG element!');
     let focus;
     let enabled = true;
@@ -7745,12 +7770,30 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
 
     //console.error(el.on);
 
-    el.node().addEventListener('keydown', (e) => {
-      //console.log(e);
-      server.kernel.io.fire(uid, String(e.code), 'capturekeydown');
-      e.preventDefault();
+    eventNames.forEach((eventName) => {
+      el.node().addEventListener(eventName, (e) => {
+        //console.log(e);
+        if (eventName === 'keydown' && e.repeat) {
+          e.preventDefault();
+          return;
+        }
+        server.kernel.io.fire(uid, formatEvent(eventName, e), channel);
+        e.preventDefault();
+      });
     });
-  };  
+  };
+
+  const keyCode = (eventName, event) => String(event.code);
+  const keyEvent = (eventName, event) =>
+    {return {DownQ:(eventName === 'keydown'), Code:String(event.code)}};
+
+  g2d.EventListener.capturekeydown = capturedKeyListener(['keydown'], 'capturekeydown', keyCode);
+  g2d.EventListener.capturekeyup = capturedKeyListener(['keyup'], 'capturekeyup', keyCode);
+  g2d.EventListener.capturekeyevents = capturedKeyListener(
+    ['keydown', 'keyup'],
+    'capturekeyevents',
+    keyEvent
+  );
 
   g2d.EventListener.keydown = (uid, object, env) => {
     //console.error('You cannot listen keys from the SVG element!');
@@ -9503,19 +9546,23 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     canvas.addEventListener("click", clicked);
   }
 
-  imageContext.EventListener.altclick = (uid, canvas, env) => {
+  const imageModifierClickListener = (eventName, modifierKey) => (uid, canvas, env) => {
     const dpr = window.devicePixelRatio;
     const updatePos = throttle((x,y) => {
-      server.kernel.io.fire(uid, [x,y], 'altclick')
+      server.kernel.io.fire(uid, [x,y], eventName)
     });
-  
+
     function clicked(event) {
-      if (event.altKey)
+      if (event[modifierKey])
         updatePos(event.offsetX*dpr, event.offsetY*dpr)
     }
 
     canvas.addEventListener("click", clicked);
-  } 
+  };
+
+  imageContext.EventListener.altclick = imageModifierClickListener('altclick', 'altKey');
+  imageContext.EventListener.metaclick = imageModifierClickListener('metaclick', 'metaKey');
+  imageContext.EventListener.shiftclick = imageModifierClickListener('shiftclick', 'shiftKey');
 
   imageContext.EventListener.mouseup = (uid, canvas, env) => {
     const dpr = window.devicePixelRatio;

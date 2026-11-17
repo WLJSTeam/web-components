@@ -16,7 +16,7 @@ interpretate.contextExpand(g3d);
 "PreserveImageOptions", "Prolog", "RotationAction", 
 "SphericalRegion", "Ticks", "TicksStyle", "TouchscreenAutoZoom", 
 "ViewAngle", "ViewCenter", "ViewMatrix", "ViewPoint", 
-"ViewProjection", "ViewSize", "VertexTextureCoordinates", "RTX","ViewRange", "ViewVector", "ViewVertical", "Controls", "PointerLockControls", "VertexNormals", "VertexColors"].map((e)=>{
+"ViewProjection", "ViewSize", "VertexTextureCoordinates", "RTX","ViewRange", "ViewVector", "ViewVertical", "Controls", "PointerLockControls", "SpinShow", "VertexNormals", "VertexColors"].map((e)=>{
   g3d[e] = () => e;
 });
 
@@ -38,6 +38,104 @@ g3d.All = () => 'All'
 */
 let THREE;
 let MathUtils;
+
+// Properties that are not consistently forwarded by every primitive's
+// material constructor are applied when the material is registered.
+const deferredMaterialProps = [
+  'sheen',
+  'anisotropy',
+  'anisotropyRotation',
+  'normalMap',
+  'emissiveMap',
+  'metalnessMap',
+  'roughnessMap',
+  'clearcoatMap',
+  'specularColorMap',
+  'sheenColorMap',
+  'aoMap',
+  'aoMapIntensity'
+];
+
+const registerDynamicMaterial = (env, material) => {
+  const materials = Array.isArray(material) ? material : [material];
+
+  if (!env.local.dynamicMaterials) env.local.dynamicMaterials = new Set();
+
+  for (const item of materials) {
+    if (!item) continue;
+
+    for (const property of deferredMaterialProps) {
+      if (env[property] !== undefined && property in item) {
+        item[property] = env[property];
+        item.needsUpdate = true;
+      }
+    }
+
+    env.local.dynamicMaterials.add(item);
+  }
+
+  const supportsColor = materials.some(item =>
+    item?.color?.isColor && item.vertexColors !== true
+  );
+
+  if (supportsColor && env.colorRefs) {
+    env.colorRefs[env.root.uid] = env.root;
+  }
+  if (materials.some(Boolean) && env.opacityRefs) {
+    env.opacityRefs[env.root.uid] = env.root;
+  }
+
+  return material;
+};
+
+const updateDynamicMaterialColor = (args, env) => {
+  for (const material of env.local.dynamicMaterials || []) {
+    if (material.color?.isColor && material.vertexColors !== true) {
+      material.color.copy(env.color);
+    }
+  }
+  env.wake(true);
+};
+
+const updateDynamicMaterialOpacity = (args, env) => {
+  const transparent = env.opacity < 1;
+
+  for (const material of env.local.dynamicMaterials || []) {
+    if (material.transparent !== transparent) {
+      material.transparent = transparent;
+      material.needsUpdate = true;
+    }
+    material.opacity = env.opacity;
+  }
+  env.wake(true);
+};
+
+const unregisterDynamicMaterials = (env) => {
+  if (env.colorRefs) delete env.colorRefs[env.root.uid];
+  if (env.opacityRefs) delete env.opacityRefs[env.root.uid];
+};
+
+const enableDynamicMaterialUpdates = (primitive) => {
+  if (!primitive || primitive.dynamicMaterialUpdates) return;
+
+  const destroy = primitive.destroy;
+
+  primitive.updateColor = updateDynamicMaterialColor;
+  primitive.updateOpacity = updateDynamicMaterialOpacity;
+  primitive.destroy = async (args, env) => {
+    unregisterDynamicMaterials(env);
+
+    try {
+      if (destroy) await destroy(args, env);
+    } finally {
+      for (const material of env.local.dynamicMaterials || []) {
+        material.dispose();
+      }
+      env.local.dynamicMaterials?.clear();
+    }
+  };
+  primitive.dynamicMaterialUpdates = true;
+};
 
 function computeGroupCenter(group) {
   var center = new THREE.Vector3();
@@ -291,8 +389,41 @@ g3d.RGBColor = async (args, env) => {
   const b = await interpretate(a[2], env);
 
   env.color = new THREE.Color(r, g, b);
+
+  if (env.root.child) {
+    const refs = {};
+    env.exposed.colorRefs = refs;
+    env.local.refs = refs;
+  }
+
+  env.exposed.color = env.color;
   return env.color;
 };
+
+g3d.RGBColor.update = async (args, env) => {
+  let a = [...args];
+
+  if (args.length === 1) {
+    a = await interpretate(args[0], env);
+    if (NumericArrayObject.Q(a)) a = a.normal();
+  }
+
+  const color = new THREE.Color(
+    await interpretate(a[0], env),
+    await interpretate(a[1], env),
+    await interpretate(a[2], env)
+  );
+
+  for (const ref of Object.values(env.local.refs || {})) {
+    ref.execute({method: 'updateColor', color});
+  }
+};
+
+g3d.RGBColor.destroy = (args, env) => {
+  delete env.local.refs;
+};
+
+g3d.RGBColor.virtual = true;
 
 g3d.GrayLevel = async (args, env) => { 
   env.colorInherit = false;
@@ -312,12 +443,34 @@ g3d.Roughness = (args, env) => {
   env.roughness = o;  
 }
 
-g3d.Opacity = (args, env) => {
-  var o = interpretate(args[0], env);
+g3d.Opacity = async (args, env) => {
+  const o = await interpretate(args[0], env);
   if (typeof o !== "number") console.error("Opacity must have number value!");
-  console.log(o);
   env.opacity = o;
+  env.exposed.opacity = o;
+
+  if (env.root.child) {
+    const refs = {};
+    env.exposed.opacityRefs = refs;
+    env.local.refs = refs;
+  }
+
+  return o;
 };
+
+g3d.Opacity.update = async (args, env) => {
+  const opacity = await interpretate(args[0], env);
+
+  for (const ref of Object.values(env.local.refs || {})) {
+    ref.execute({method: 'updateOpacity', opacity});
+  }
+};
+
+g3d.Opacity.destroy = (args, env) => {
+  delete env.local.refs;
+};
+
+g3d.Opacity.virtual = true;
 
 g3d.Scale = async (args, env) => {
   // args: [object, scale, center?]
@@ -462,6 +615,7 @@ g3dComplex.Tube = async (args, env) => {
     matte: env.matte
     
   });
+  registerDynamicMaterial(env, material);
 
   if (!VariableTube) {
     VariableTube = await import('./../libs/tubes/index.js');
@@ -475,7 +629,6 @@ g3dComplex.Tube = async (args, env) => {
   
     //geometry.dispose();
   
-    material.dispose();  
 }
 
 g3dComplex.Tube.update = () => console.error('Tube inside Complex does not support updates')
@@ -549,6 +702,7 @@ g3d.Cone = async (args, env) => {
     matte: env.matte
     
   });
+  registerDynamicMaterial(env, material);
 
   if (!VariableTube) {
     VariableTube = await import('./../libs/tubes/index.js');
@@ -562,7 +716,6 @@ g3d.Cone = async (args, env) => {
   
     //geometry.dispose();
   
-  material.dispose();
 }
 
 g3d.Cone.update = async (args, env) => {
@@ -652,6 +805,7 @@ g3d.Tube = async (args, env) => {
     matte: env.matte
     
   });
+  registerDynamicMaterial(env, material);
 
   if (!VariableTube) {
     VariableTube = await import('./../libs/tubes/index.js');
@@ -665,7 +819,6 @@ g3d.Tube = async (args, env) => {
   
     //geometry.dispose();
   
-  material.dispose();
 }
 
 g3d.Tube.update = async (args, env) => {
@@ -743,6 +896,7 @@ thickness: env.materialThickness,
     matte: env.matte
     
   });
+  registerDynamicMaterial(env, material);
 
   const geometry = new THREE.CylinderGeometry(radius, radius, length, 32, 1);
 
@@ -787,7 +941,6 @@ thickness: env.materialThickness,
 
   geometry.dispose();
   conegeometry.dispose();
-  material.dispose();
 
   return group;
 };
@@ -885,6 +1038,7 @@ g3d.Arrow = async (args, env) => {
       opacity: env.opacity,
       transparent: env.opacity < 1.0 ? true : false
     });
+    registerDynamicMaterial(env, material);
     const line = new THREE.Line(geometry, material);
 
     env.local.line = line;
@@ -911,6 +1065,7 @@ g3d.Arrow = async (args, env) => {
     len,
     env.color
   );
+  registerDynamicMaterial(env, [arrowHelper.line.material, arrowHelper.cone.material]);
   //arrowHelper.castShadow = env.shadows;
   //arrowHelper.receiveShadow = env.shadows;
    
@@ -1025,6 +1180,7 @@ g3dComplex.Point = async (args, env) => {
   } else {
     material = new THREE.PointsMaterial( { color: env.color, opacity: env.opacity, size: 3.1 * env.pointSize / (0.011111111111111112)} );
   }  
+  registerDynamicMaterial(env, material);
 
   env.local.material = material;
   
@@ -1068,6 +1224,7 @@ g3d.Point = async (args, env) => {
   let material;
   
   material = new THREE.PointsMaterial( { color: env.color, opacity: env.opacity, size: 3.1 * env.pointSize / (0.011111111111111112)} );
+  registerDynamicMaterial(env, material);
   
   
   const points = new THREE.Points( geometry, material );
@@ -1139,6 +1296,7 @@ g3d.Locator = async (args, env) => {
     transparent: env.opacity < 1.0,
     depthTest: false
   });
+  registerDynamicMaterial(env, material);
 
   env.local.geometry = makeLocator3DGeometry(Math.max(0.05, env.pointSize || 0.08) * 3);
   env.local.material = material;
@@ -1196,6 +1354,8 @@ thickness: env.materialThickness,
     map: env.texture || null
   });
 
+  registerDynamicMaterial(env, material);
+
   function addSphere(cr) {
     const origin = new THREE.Vector4(...cr, 1);
     const geometry = new THREE.SphereGeometry(radius, 40, 40);
@@ -1230,8 +1390,6 @@ thickness: env.materialThickness,
       env.local.object.push(addSphere(el));
     });
   } 
-
-  material.dispose();
 
   return env.local.object;
 };
@@ -1352,6 +1510,7 @@ g3d.Cube = async (args, env) => {
     map: env.texture || null
   });
 
+  registerDynamicMaterial(env, material);
   const cube = new THREE.Mesh(geometry, material);
 
   // Apply transformations
@@ -1367,8 +1526,6 @@ g3d.Cube = async (args, env) => {
   env.local.box = cube;
 
   geometry.dispose();
-  material.dispose();
-
   return cube;
 }
 
@@ -1498,6 +1655,8 @@ thickness: env.materialThickness,
     
   });
 
+  registerDynamicMaterial(env, material);
+
   //material.side = THREE.DoubleSide;
 
   const cube = new THREE.Mesh(geometry, material);
@@ -1520,8 +1679,6 @@ thickness: env.materialThickness,
   env.local.box = cube;
 
   geometry.dispose();
-  material.dispose();
-
   return cube;
 };
 
@@ -1666,6 +1823,7 @@ matte: env.matte
     
   });
 
+  registerDynamicMaterial(env, material);
   console.log(coordinates);
 
   // edge from X to Y
@@ -1797,6 +1955,7 @@ g3d.Octahedron = async (args, env) => {
     
   });
 
+  registerDynamicMaterial(env, material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(position);
   mesh.scale.set(scale, scale, scale);
@@ -1808,7 +1967,6 @@ g3d.Octahedron = async (args, env) => {
 
 
   geometry.dispose();
-  material.dispose();
   return mesh;
 };
 
@@ -1859,6 +2017,7 @@ g3d.Tetrahedron = async (args, env) => {
     
   });
 
+  registerDynamicMaterial(env, material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(position);
   mesh.scale.set(scale, scale, scale);
@@ -1870,7 +2029,6 @@ g3d.Tetrahedron = async (args, env) => {
 
 
   geometry.dispose();
-  material.dispose();
   return mesh;
 };
 
@@ -1921,6 +2079,7 @@ g3d.Icosahedron = async (args, env) => {
     
   });
 
+  registerDynamicMaterial(env, material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(position);
   mesh.scale.set(scale, scale, scale);
@@ -1931,7 +2090,6 @@ g3d.Icosahedron = async (args, env) => {
   env.mesh.add(mesh);
 
   geometry.dispose();
-  material.dispose();
   return mesh;
 };
 
@@ -2604,6 +2762,7 @@ matte: env.matte
     
   });
 
+  registerDynamicMaterial(env, material);
   console.log(coordinates);
 
   // edge from X to Y
@@ -2679,6 +2838,8 @@ thickness: env.materialThickness,
     map: env.texture || null
   });
 
+  registerDynamicMaterial(env, material);
+
   function addSphere(cr) {
     const origin = new THREE.Vector3(...cr);
     const geometry = new THREE.SphereGeometry(radius, 40, 40);
@@ -2714,8 +2875,6 @@ thickness: env.materialThickness,
     env.local.object = [addSphere([ref[index], ref[index+1], ref[index+2]])];
   } 
 
-
-  material.dispose();
 
   return env.local.object;
 };
@@ -3299,6 +3458,7 @@ thickness: env.materialThickness,
   
     //poly.frustumCulled = false;
     env.mesh.add(poly);
+    registerDynamicMaterial(env, material);
     env.local.material = material;
     env.local.poly = poly;
 
@@ -3317,8 +3477,14 @@ g3dComplex.Polygon.reassign = (v, local) => {
       if (v.colored)
         g.setAttribute( 'color', v.colors );
       
-      if (local.normals)
+      if (local.normals) {
         g.setAttribute('normal', v.normals);
+      } else {
+        // computeVertexNormals() reuses an existing normal attribute even when
+        // the position attribute has grown. Remove the stale attribute so the
+        // vertex update handler recreates it with the new capacity.
+        g.deleteAttribute('normal');
+      }
 
       //g.setIndex(local.indexes);
 
@@ -3761,7 +3927,9 @@ g3dComplex.Polygon.update = async (args, env) => {
       
 
 
-    //if (!env.local.normals) env.local.geometry.computeVertexNormals();
+    // The GraphicsComplex vertex handler runs before the Polygon indices are
+    // updated. Recompute implicit normals again against the new topology.
+    if (!env.local.normals) env.local.geometry.computeVertexNormals();
 
     
     env.local.geometry.computeBoundingBox();
@@ -3800,6 +3968,7 @@ g3d.Texture = async (args, env) => {
   env.local.texture = texture;
   env.local.img = img;
   env.exposed.texture = texture;
+  return texture;
 }
 
 g3d.Texture.destroy = (args, env) => {
@@ -3937,6 +4106,7 @@ g3d.Dodecahedron = async (args, env) => {
     matte: env.matte
   });
 
+  registerDynamicMaterial(env, material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(position);
   mesh.scale.set(scale, scale, scale);
@@ -3948,8 +4118,6 @@ g3d.Dodecahedron = async (args, env) => {
   env.mesh.add(mesh);
 
   geometry.dispose();
-  material.dispose();
-
   return mesh;
 };
 
@@ -4001,13 +4169,12 @@ matte: env.matte
       
     });
 
+    registerDynamicMaterial(env, material);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.receiveShadow = env.shadows;
     mesh.castShadow = env.shadows;
     env.mesh.add(mesh);
     geometry.dispose();
-    material.dispose();
-
     return mesh;
   }
 };
@@ -4234,6 +4401,13 @@ g3d.Text = async (args, env) => {
     await setTextAlignment(labelX, args, env);
     env.mesh.add(labelX);
 
+    if (!env.colorInherit) stext.style.color = env.color.getStyle();
+    if (env.opacity !== undefined) stext.style.opacity = env.opacity;
+    env.local.text = stext;
+    env.local.labelObject = labelX;
+    if (env.colorRefs) env.colorRefs[env.root.uid] = env.root;
+    if (env.opacityRefs) env.opacityRefs[env.root.uid] = env.root;
+
     await makeEditorView(args[0], {...env, element:stext});
     return labelX;
   }
@@ -4242,6 +4416,7 @@ g3d.Text = async (args, env) => {
   if (env.fontSize) text.style.fontSize = env.fontSize + 'px';
   if (env.fontFamily) text.style.fontFamily = env.fontFamily ;
   if (!env.colorInherit) text.style.color = env.color.getStyle();
+  if (env.opacity !== undefined) text.style.opacity = env.opacity;
 
   //text.style.color = 'rgb(' + atom[ 3 ][ 0 ] + ',' + atom[ 3 ][ 1 ] + ',' + atom[ 3 ][ 2 ] + ')';
   
@@ -4261,6 +4436,9 @@ g3d.Text = async (args, env) => {
   env.local.labelObject = labelObject;
 
   env.mesh.add(labelObject);
+
+  if (env.colorRefs) env.colorRefs[env.root.uid] = env.root;
+  if (env.opacityRefs) env.opacityRefs[env.root.uid] = env.root;
 };
 
 g3d.Text.update = async (args, env) => { 
@@ -4278,7 +4456,20 @@ g3d.Text.update = async (args, env) => {
   env.wake();
 }
 
-g3d.Text.destroy = () => {
+g3d.Text.updateColor = (args, env) => {
+  env.local.text.style.color = env.color.getStyle();
+  env.wake(true);
+};
+
+g3d.Text.updateOpacity = (args, env) => {
+  env.local.text.style.opacity = env.opacity;
+  env.wake(true);
+};
+
+g3d.Text.destroy = (args, env) => {
+  unregisterDynamicMaterials(env);
+  env.local.labelObject?.removeFromParent();
+  env.local.text?.remove();
 
 }
 
@@ -4306,19 +4497,368 @@ g3d.Text.virtual = true
       'opacity',
       'clearcoat',
       'clearcoatRoughness',
+      'sheen',
       'sheenColor',
       'sheenRoughness',
+      'anisotropy',
+      'anisotropyRotation',
       'iridescence',
       'iridescenceIOR',
       'iridescenceThickness',
       'specularColor',
       'specularIntensity',
+      'normalMap',
+      'emissiveMap',
+      'metalnessMap',
+      'roughnessMap',
+      'clearcoatMap',
+      'specularColorMap',
+      'sheenColorMap',
+      'aoMap',
+      'aoMapIntensity',
       'matte',
       'flatShading',
       'castShadow',
       'shadows',
       'fontSize'
   ];
+
+const materialShadingPresets = {
+  Aluminum: {
+    color: [0.95, 0.95, 0.95], roughness: 0.75, metalness: 0.8,
+    anisotropy: 0.6
+  },
+  Brass: {
+    color: [0.9, 0.855, 0.45], roughness: 0.65, metalness: 0.8,
+    anisotropy: 0.4
+  },
+  Bronze: {
+    color: [0.9, 0.68625, 0.45], roughness: 0.65, metalness: 0.8,
+    anisotropy: 0.3
+  },
+  Copper: {
+    color: [1, 0.65, 0.5], roughness: 0.65, metalness: 0.8,
+    anisotropy: 0.3
+  },
+  Electrum: {
+    color: [0.9, 0.774, 0.45], roughness: 0.7, metalness: 0.7,
+    anisotropy: 0.3
+  },
+  Gold: {
+    color: [1, 0.75, 0], roughness: 0.65, metalness: 0.8,
+    anisotropy: 0.3
+  },
+  Iron: {
+    color: [0.6, 0.576, 0.54], roughness: 0.6, metalness: 0.7,
+    anisotropy: 0.3
+  },
+  Pewter: {
+    color: [0.9, 0.864, 0.81], roughness: 0.75, metalness: 1,
+    anisotropy: 0.3
+  },
+  Silver: {
+    color: [1, 1, 1], roughness: 0.75, metalness: 1,
+    anisotropy: 0.3
+  },
+  Clay: {
+    color: [0.8, 0.32, 0.16], roughness: 0, metalness: 0
+  },
+  Foil: {
+    color: [0.5, 1, 0], roughness: 0.6, metalness: 0.5,
+    clearcoat: 0.75, clearcoatRoughness: 0.6
+  },
+  Glazed: {
+    color: [1, 0.24, 0], roughness: 0.6, metalness: 0.5,
+    clearcoat: 0.75, clearcoatRoughness: 0.2, anisotropy: 0.6
+  },
+  Plastic: {
+    color: [0.3, 0.58, 1], roughness: 1, metalness: 0,
+    clearcoat: 0.75, clearcoatRoughness: 0.3, anisotropy: 0.5
+  },
+  Rubber: {
+    color: [0.5, 0.5, 0.5], roughness: 0.6, metalness: 0.2
+  },
+  Satin: {
+    color: [0.75, 0.5, 1], roughness: 0.75, metalness: 0.5,
+    specularIntensity: 0.5, anisotropy: 0.8
+  },
+  Velvet: {
+    color: [0.5, 1, 0], roughness: 0, metalness: 0,
+    sheen: 1, sheenColor: [1, 1, 0], sheenRoughness: 0.3
+  }
+};
+
+const materialShadingDefaults = {
+  opacity: 1,
+  clearcoat: 0,
+  clearcoatRoughness: 0,
+  sheen: 0,
+  sheenColor: [1, 1, 1],
+  sheenRoughness: 1,
+  anisotropy: 0,
+  anisotropyRotation: 0,
+  specularColor: [1, 1, 1],
+  specularIntensity: 1
+};
+
+const materialShadingColor = (value) => new THREE.Color(...value);
+const defaultMaterialShadingPreset = {
+  color: [1, 1, 1], roughness: 1, metalness: 0
+};
+
+const applyMaterialShadingPreset = (preset, color, env) => {
+  const properties = {...materialShadingDefaults, ...preset};
+
+  env.texture = undefined;
+  env.emissive = undefined;
+  env.emissiveIntensity = undefined;
+  env.transmission = undefined;
+  env.iridescence = undefined;
+  for (const property of deferredMaterialProps) env[property] = undefined;
+
+  env.color = color?.isColor === true
+    ? color.clone()
+    : materialShadingColor(properties.color);
+  env.roughness = properties.roughness;
+  env.metalness = properties.metalness;
+  env.opacity = properties.opacity;
+  env.clearcoat = properties.clearcoat;
+  env.clearcoatRoughness = properties.clearcoatRoughness;
+  env.sheen = properties.sheen;
+  env.sheenColor = materialShadingColor(properties.sheenColor);
+  env.sheenRoughness = properties.sheenRoughness;
+  env.anisotropy = properties.anisotropy;
+  env.anisotropyRotation = properties.anisotropyRotation;
+  env.specularColor = materialShadingColor(properties.specularColor);
+  env.specularIntensity = properties.specularIntensity;
+};
+
+const isPlainObject = value => value?.constructor === Object;
+
+const materialShadingPropertyAliases = {
+  BaseColor: 'color',
+  EmissionColor: 'emissive',
+  EmissionIntensity: 'emissiveIntensity',
+  Opacity: 'opacity',
+  MetallicCoefficient: 'metalness',
+  RoughnessCoefficient: 'roughness',
+  CoatIntensity: 'clearcoat',
+  CoatRoughnessCoefficient: 'clearcoatRoughness',
+  SheenIntensity: 'sheen',
+  SheenRoughnessCoefficient: 'sheenRoughness',
+  SpecularIntensity: 'specularIntensity',
+  SpecularAnisotropyCoefficient: 'anisotropy',
+  IndexOfRefraction: 'ior',
+  IOR: 'ior',
+  TransmissionCoefficient: 'transmission',
+  Thickness: 'materialThickness'
+};
+
+const weightedMaterialValue = value => {
+  if (Array.isArray(value) && value.length === 2 && typeof value[1] === 'number') {
+    return {value: value[0], intensity: value[1]};
+  }
+  return {value, intensity: undefined};
+};
+
+const copyMaterialValue = value => value?.isColor === true ? value.clone() : value;
+
+const applyColorOrTexture = (value, env, colorProperty, mapProperty, intensityProperty) => {
+  const weighted = weightedMaterialValue(value);
+
+  if (weighted.value?.isTexture === true && mapProperty) {
+    env[mapProperty] = weighted.value;
+  } else if (weighted.value?.isColor === true) {
+    env[colorProperty] = weighted.value.clone();
+  }
+
+  if (weighted.intensity !== undefined && intensityProperty) {
+    env[intensityProperty] = weighted.intensity;
+  }
+
+  return weighted;
+};
+
+const applyTextureTransform = (texture, scale, offset) => {
+  if (texture?.isTexture !== true) return;
+
+  if (Array.isArray(scale) && scale.length >= 2) {
+    texture.repeat.set(scale[0], scale[1]);
+  }
+  if (Array.isArray(offset) && offset.length >= 2) {
+    texture.offset.set(offset[0], offset[1]);
+  }
+  texture.needsUpdate = true;
+};
+
+const applyMaterialShadingProperties = (properties, env) => {
+  const handled = new Set([
+    'BaseColor', 'EmissionColor', 'SpecularColor', 'CoatColor', 'SheenColor', 'Opacity',
+    'MetallicCoefficient', 'RoughnessCoefficient', 'DiffuseRoughnessCoefficient',
+    'AmbientExposureFraction', 'SurfaceNormals',
+    'SpecularAnisotropyCoefficient', 'CoatAnisotropyCoefficient',
+    'TextureCoordinateScale', 'TextureCoordinateOffset'
+  ]);
+
+  if ('BaseColor' in properties) {
+    const weighted = weightedMaterialValue(properties.BaseColor);
+    if (weighted.value?.isTexture === true) {
+      env.texture = weighted.value;
+    } else if (weighted.value?.isColor === true) {
+      env.color = weighted.value.clone();
+    }
+  }
+
+  if (typeof properties.Opacity === 'number') {
+    env.opacity = Math.min(1, Math.max(0, properties.Opacity));
+  }
+
+  if ('EmissionColor' in properties) {
+    applyColorOrTexture(
+      properties.EmissionColor, env, 'emissive', 'emissiveMap', 'emissiveIntensity'
+    );
+  }
+
+  if ('SpecularColor' in properties) {
+    applyColorOrTexture(
+      properties.SpecularColor, env, 'specularColor', 'specularColorMap', 'specularIntensity'
+    );
+  }
+
+  if ('CoatColor' in properties) {
+    const coat = weightedMaterialValue(properties.CoatColor);
+    env.clearcoat = coat.intensity ?? 1;
+    if (coat.value?.isTexture === true) {
+      env.clearcoatMap = coat.value;
+    } else if (coat.value?.isColor === true && !('SpecularColor' in properties)) {
+      // Three.js has no clear-coat tint, so use the specular tint as the closest
+      // available approximation while retaining a physically separate coat.
+      env.specularColor = coat.value.clone();
+    }
+  }
+
+  if ('SheenColor' in properties) {
+    const sheen = applyColorOrTexture(
+      properties.SheenColor, env, 'sheenColor', 'sheenColorMap', 'sheen'
+    );
+    if (sheen.intensity === undefined) env.sheen = 1;
+  }
+
+  if ('MetallicCoefficient' in properties) {
+    const metallic = properties.MetallicCoefficient;
+    if (metallic?.isTexture === true) {
+      env.metalnessMap = metallic;
+      env.metalness = 1;
+    } else if (typeof metallic === 'number') {
+      env.metalness = metallic;
+    }
+  }
+
+  if ('RoughnessCoefficient' in properties) {
+    const roughness = properties.RoughnessCoefficient;
+    if (roughness?.isTexture === true) {
+      env.roughnessMap = roughness;
+      env.roughness = 1;
+    } else if (typeof roughness === 'number') {
+      env.roughness = roughness;
+    }
+  } else if (typeof properties.DiffuseRoughnessCoefficient === 'number') {
+    // MeshPhysicalMaterial has one roughness channel, so use it for diffuse
+    // roughness when the primary WL roughness property was not specified.
+    env.roughness = properties.DiffuseRoughnessCoefficient;
+  }
+
+  if ('AmbientExposureFraction' in properties) {
+    const ambient = properties.AmbientExposureFraction;
+    if (ambient?.isTexture === true) {
+      env.aoMap = ambient;
+      env.aoMapIntensity = 1;
+    } else if (typeof ambient === 'number') {
+      env.aoMapIntensity = ambient;
+    }
+  }
+
+  if (properties.SurfaceNormals?.isTexture === true) {
+    env.normalMap = properties.SurfaceNormals;
+  }
+
+  const anisotropy = properties.SpecularAnisotropyCoefficient
+    ?? properties.CoatAnisotropyCoefficient;
+  if (Array.isArray(anisotropy)) {
+    if (typeof anisotropy[0] === 'number') env.anisotropy = anisotropy[0];
+    if (typeof anisotropy[1] === 'number') env.anisotropyRotation = anisotropy[1];
+  } else if (typeof anisotropy === 'number') {
+    env.anisotropy = anisotropy;
+  }
+
+  for (const [name, value] of Object.entries(properties)) {
+    if (handled.has(name)) continue;
+
+    const fallbackName = name.charAt(0).toLowerCase() + name.slice(1);
+    const property = materialShadingPropertyAliases[name] || fallbackName;
+    if (materialProps.includes(property)) {
+      env[property] = copyMaterialValue(value);
+    }
+  }
+
+  const textures = [
+    env.texture, env.normalMap, env.emissiveMap, env.metalnessMap,
+    env.roughnessMap, env.specularColorMap, env.sheenColorMap,
+    env.clearcoatMap, env.aoMap
+  ];
+  for (const texture of textures) {
+    applyTextureTransform(
+      texture, properties.TextureCoordinateScale, properties.TextureCoordinateOffset
+    );
+  }
+};
+
+g3d.MaterialShading = async (args, env) => {
+  if (!args.length) {
+    applyMaterialShadingPreset(defaultMaterialShadingPreset, undefined, env);
+    return;
+  }
+
+  const payload = await interpretate(args[0], {...env});
+  if (isPlainObject(payload)) {
+    applyMaterialShadingPreset(defaultMaterialShadingPreset, undefined, env);
+    applyMaterialShadingProperties(payload, env);
+    return;
+  }
+  if (typeof payload === 'function') {
+    env.material = payload; //if this is a material factory
+    return;
+  }
+  const name = Array.isArray(payload) ? payload[0] : payload;
+  if (typeof name !== 'string') return;
+
+  const handlerName = Object.keys(g3d.MaterialShading).find(
+    candidate => candidate.toLowerCase() === name.toLowerCase()
+  );
+  const handler = handlerName ? g3d.MaterialShading[handlerName] : undefined;
+  if (!handler) return;
+
+  handler(Array.isArray(payload) ? payload[1] : undefined, env);
+};
+
+for (const [name, preset] of Object.entries(materialShadingPresets)) {
+  g3d.MaterialShading[name] = (color, env) => {
+    applyMaterialShadingPreset(preset, color, env);
+  };
+}
+
+g3d.MaterialShading.MeshPhysicalMaterial = (any, env) => {
+  env.material = THREE.MeshPhysicalMaterial;
+};
+g3d.MaterialShading.MeshLambertMaterial = (any, env) => {
+  env.material = THREE.MeshLambertMaterial;
+};
+g3d.MaterialShading.MeshPhongMaterial = (any, env) => {
+  env.material = THREE.MeshPhongMaterial;
+};
+g3d.MaterialShading.MeshToonMaterial = (any, env) => {
+  env.material = THREE.MeshToonMaterial;
+};
 
 g3d.Directive = async (args, env) => { 
   const opts = await core._getRules(args, {...env, hold:true});
@@ -4328,7 +4868,8 @@ g3d.Directive = async (args, env) => {
       const r = await interpretate(args[0][i], env);
     }
   } else {
-    for (let i=0; i<args.length - Object.keys(opts).length; ++i) {
+    for (let i=0; i<args.length; ++i) {
+      if (args[i][0]=='Rule') continue;
       const r = await interpretate(args[i], env);
     }
   }
@@ -4457,6 +4998,7 @@ g3dComplex.Line = async (args, env) => {
   const indexParts = normalizeComplexLineIndices(raw);
 
   const material = makeComplexLineMaterial(env);
+  registerDynamicMaterial(env, material);
 
   env.local.parts = [];
   env.local.material = material;
@@ -4671,6 +5213,7 @@ g3d.Line = async (args, env) => {
           opacity: env.opacity,
           transparent: env.opacity < 1.0 ? true : false
         });        
+        registerDynamicMaterial(env, material);
 
         for (const p of points) {
           geometry = new THREE.BufferGeometry();
@@ -4687,7 +5230,6 @@ g3d.Line = async (args, env) => {
           env.mesh.add(line);          
         }
 
-        material.dispose();
         //3D will
 
         return;
@@ -4707,6 +5249,7 @@ g3d.Line = async (args, env) => {
       opacity: env.opacity,
       transparent: env.opacity < 1.0 ? true : false
     });
+    registerDynamicMaterial(env, material);
     const line = new THREE.Line(geometry, material);
 
     env.local.line = line;
@@ -4747,7 +5290,33 @@ g3d.Line.destroy = async (args, env) => {
   if (env.local.lines) env.local.lines.forEach((l) => l.geometry.dispose())
 }
 
-g3d.Line.virtual = true
+g3d.Line.virtual = true;
+
+[
+  g3dComplex.Tube,
+  g3d.Cone,
+  g3d.Tube,
+  g3d.TubeArrow,
+  g3d.Arrow,
+  g3dComplex.Point,
+  g3d.Point,
+  g3d.Locator,
+  g3d.Sphere,
+  g3d.Cube,
+  g3d.Cuboid,
+  g3d.Parallelepiped,
+  g3d.Cylinder,
+  g3d.Octahedron,
+  g3d.Tetrahedron,
+  g3d.Icosahedron,
+  g3dComplex.Cylinder,
+  g3dComplex.Sphere,
+  g3dComplex.Polygon,
+  g3d.Dodecahedron,
+  g3d.Polyhedron,
+  g3dComplex.Line,
+  g3d.Line
+].forEach(enableDynamicMaterialUpdates);
 
 let EffectComposer;
 let RenderPass; 
@@ -5388,12 +5957,12 @@ if (typeof options.Intensity == 'number') intensity = options.Intensity;
 const hemiLight = new THREE.HemisphereLight( skyColor, groundColor, intensity );
 env.global.scene.add( hemiLight );
 }
-
+//depricated in a favour of native MaterialShading WL12+
 g3d.MeshMaterial = async (args, env) => {
-const mat = await interpretate(args[0], env);
-env.material = mat;
+  const mat = await interpretate(args[0], env);
+  env.material = mat;
 }
-
+//depricated!
 g3d['CoffeeLiqueur`Extensions`Graphics3D`MeshMaterial'] = g3d.MeshMaterial
 
 g3d.MeshPhysicalMaterial = () => THREE.MeshPhysicalMaterial
@@ -5417,25 +5986,179 @@ g3d.MeshFogMaterial = async (args, env) => {
 
 let TransformControls = false
 
+const raycastEvent = (event, object, env, raycaster, pointer) => {
+  // Pointer events are attached to the CSS2D overlay because it also drives
+  // the controls, but NDC must be calculated against the WebGL viewport. The
+  // overlay can have a different offset in centered/slide layouts.
+  const domElement = env.global.renderer?.domElement || env.global.domElement;
+  const camera = env.global.camera || env.camera;
+
+  if (!domElement || !camera || !object) return null;
+
+  const bounds = domElement.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return null;
+
+  // Three.js defaults Line and Points raycasting to a threshold of one world
+  // unit. That is large enough for a unit-sized plot's box and axes to mask
+  // the surface below them. Convert roughly two CSS pixels to world units so
+  // thin primitives remain selectable without swallowing nearby meshes.
+  if (raycaster.wljsPointerThreshold === undefined) {
+    const plotBounds = new THREE.Box3().setFromObject(
+      env.global.plotGroup || object
+    );
+    const plotSize = plotBounds.getSize(new THREE.Vector3());
+    const plotSpan = Math.max(plotSize.x, plotSize.y, plotSize.z);
+    const viewportSpan = Math.max(1, Math.min(bounds.width, bounds.height));
+    const threshold = Number.isFinite(plotSpan) && plotSpan > 0
+      ? 2 * plotSpan / viewportSpan : 0.01;
+
+    raycaster.params.Line.threshold = threshold;
+    raycaster.params.Points.threshold = threshold;
+    raycaster.wljsPointerThreshold = threshold;
+  }
+
+  pointer.set(
+    ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+    -((event.clientY - bounds.top) / bounds.height) * 2 + 1
+  );
+
+  raycaster.setFromCamera(pointer, camera);
+
+  const intersections = Array.isArray(object)
+    ? raycaster.intersectObjects(object, true)
+    : raycaster.intersectObject(object, true);
+
+  if (!intersections.length) return null;
+
+  // Graphics3D applies centering, axis conversion and BoxRatios to its root
+  // group. Convert the world-space hit back to the coordinates used by the
+  // Wolfram expression before sending it to the kernel.
+  const point = intersections[0].point.clone();
+  if (env.global.plotGroup) env.global.plotGroup.worldToLocal(point);
+
+  return point.toArray();
+};
+
+const pointerGestureState = (env) => {
+  if (env.global.pointerGestureState) {
+    return env.global.pointerGestureState;
+  }
+
+  const state = {
+    pointers: new Map(),
+    suppressClickUntil: 0,
+    suppressedClickEvent: null
+  };
+  const domElement = env.global.domElement;
+  const dragThresholdSq = 4 * 4;
+
+  domElement.addEventListener('pointerdown', (event) => {
+    state.suppressClickUntil = 0;
+    state.suppressedClickEvent = null;
+    state.pointers.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+      dragged: false
+    });
+  }, true);
+
+  domElement.addEventListener('pointermove', (event) => {
+    const pointer = state.pointers.get(event.pointerId);
+    if (!pointer || pointer.dragged) return;
+
+    const dx = event.clientX - pointer.x;
+    const dy = event.clientY - pointer.y;
+    if (dx * dx + dy * dy > dragThresholdSq) pointer.dragged = true;
+  }, true);
+
+  domElement.addEventListener('pointerup', (event) => {
+    const pointer = state.pointers.get(event.pointerId);
+    if (pointer?.dragged) {
+      // A native click, when generated, follows pointerup immediately. Keep
+      // this bounded so a drag without a click cannot suppress a later click.
+      state.suppressClickUntil = event.timeStamp + 250;
+    }
+    state.pointers.delete(event.pointerId);
+  }, true);
+
+  domElement.addEventListener('pointercancel', (event) => {
+    state.pointers.delete(event.pointerId);
+  }, true);
+
+  env.global.pointerGestureState = state;
+  return state;
+};
+
+const isGestureClick = (event, state) => {
+  // Several object/scene listeners can receive the same DOM event. Once one
+  // marks it as suppressed, all of them must make the same decision.
+  if (state.suppressedClickEvent === event) return true;
+  if (state.suppressClickUntil === 0) return false;
+  if (event.timeStamp > state.suppressClickUntil) return false;
+
+  state.suppressedClickEvent = event;
+  state.suppressClickUntil = 0;
+  return true;
+};
+
+const pointerEventListener = (eventName) => (uid, object, env) => {
+  // A scene-level listener should pick the rendered graphic, not Epilog
+  // annotations (such as a locator sphere) or decorations added afterwards.
+  // The Graphics3D wrapper installs this listener at the start of Epilog, so
+  // taking a shallow snapshot here preserves the base plot objects while the
+  // recursive raycast still reaches their meshes.
+  const plotObjects = env.global.plotGroup
+    ? [...env.global.plotGroup.children] : [];
+  const target = object || (plotObjects.length
+    ? plotObjects : env.global.plotGroup || env.global.scene);
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  const gestureState = eventName === 'click'
+    ? pointerGestureState(env) : null;
+  const updatePosition = throttle((point) => {
+    server.kernel.io.fire(uid, point, eventName);
+  });
+
+  env.global.domElement.addEventListener(eventName, (event) => {
+    if (gestureState && isGestureClick(event, gestureState)) return;
+
+    // Match Graphics2D: a regular click does not also handle Alt-clicks.
+    if (eventName === 'click' && event.altKey) return;
+
+    const point = raycastEvent(event, target, env, raycaster, pointer);
+    if (point) updatePosition(point);
+  });
+};
+
 g3d.EventListener = async (args, env) => {
   const rules = await interpretate(args[1], env);
 
   const copy = {...env};
 
-  let object = await interpretate(args[0], env);
-  if (Array.isArray(object)) object = object[0];
+  let object = await interpretate(args[0], copy);
+  if (Array.isArray(object) && object.length === 1) object = object[0];
 
-  if (!TransformControls) {
+  const needsTransformControls = rules.some((rule) =>
+    rule.lhs === 'transform' || rule.lhs === 'drag'
+  );
+
+  if (needsTransformControls && !TransformControls) {
     await interpretate.shared.THREETransformControls.load();
     TransformControls = interpretate.shared.THREETransformControls.TransformControls;
     //TransformControls = (await import('three/addons/controls/TransformControls.js')).TransformControls;
   }
   rules.forEach((rule)=>{
-    g3d.EventListener[rule.lhs](rule.rhs, object, copy);
+    const target = Array.isArray(object) &&
+      (rule.lhs === 'transform' || rule.lhs === 'drag')
+      ? object[0] : object;
+    g3d.EventListener[rule.lhs](rule.rhs, target, copy);
   });
 
   return null;
 }
+
+g3d.EventListener.click = pointerEventListener('click');
+g3d.EventListener.mousemove = pointerEventListener('mousemove');
 
 g3d.EventListener.transform = (uid, object, env) => {
   console.log(env);
@@ -5714,6 +6437,19 @@ if (Object.keys(options).length === 0 && args.length > 1) {
 }
 
 console.warn(options);  
+
+let spinShow = 'SpinShow' in options
+  ? await interpretate(options.SpinShow, {...env, context: g3d}) : false;
+let spinSpeed = 0.6; // radians per second
+if (Array.isArray(spinShow)) {
+  spinSpeed = spinShow[1];
+  spinShow = spinShow[0];
+}
+const spinMaxAngle = spinShow === true || spinShow === 'Automatic'
+  ? Infinity : Math.abs(spinShow);
+const spinEnabled = spinShow !== false && spinShow != null &&
+  (spinMaxAngle === Infinity || Number.isFinite(spinMaxAngle) && spinMaxAngle > 0) &&
+  Number.isFinite(spinSpeed) && spinSpeed !== 0;
 
 
 let noGrid = true;
@@ -6255,6 +6991,7 @@ if (PathRendering) {
 
 
 const group = new THREE.Group();
+env.global.plotGroup = group;
 
 const allowLerp = false;
 if (options.TransitionType) {
@@ -6307,13 +7044,25 @@ const envcopy = {
   opacity: undefined,
   clearcoat: undefined,
   clearcoatRoughness: undefined,
+  sheen: undefined,
   sheenColor: undefined,
   sheenRoughness: undefined,
+  anisotropy: undefined,
+  anisotropyRotation: undefined,
   iridescence: undefined,
   iridescenceIOR: undefined,
   iridescenceThickness: undefined,
   specularColor: undefined,
   specularIntensity: undefined,
+  normalMap: undefined,
+  emissiveMap: undefined,
+  metalnessMap: undefined,
+  roughnessMap: undefined,
+  clearcoatMap: undefined,
+  specularColorMap: undefined,
+  sheenColorMap: undefined,
+  aoMap: undefined,
+  aoMapIntensity: undefined,
   matte: undefined
 }  
 
@@ -6328,6 +7077,7 @@ env.global.renderer = renderer;
 env.global.labelRenderer = labelRenderer;
 env.global.domElement = domElement;
 env.global.scene    = scene;
+env.global.camera   = activeCamera;
 envcopy.camera   = activeCamera;
 //activeCamera.layers.enableAll();
 
@@ -6347,6 +7097,8 @@ if (options.Axes && plotRange) {
 
 let noLighting = false;
 
+
+
 if ('Lighting' in options) {
   if (options.Lighting) {
     if (options.Lighting[0] == 'List') {
@@ -6355,6 +7107,10 @@ if ('Lighting' in options) {
       if (options.Lighting == "'Neutral'") {
         //neutralMaterial = true;
         envcopy.material = THREE.MeshBasicMaterial;
+      } else if (options.Lighting == "'None'" || options.Lighting == "None" || options.Lighting == "'False'" || options.Lighting == "'Null'" || options.Lighting == "Null") {
+        noLighting = true;
+      } else if (typeof options.Lighting == 'string') {
+        noLighting = false;
       } else {
         noLighting = true;
       }
@@ -7001,6 +7757,30 @@ if (envcopy.camera.isOrthographicCamera) {
 
 scene.updateMatrixWorld();
 
+let spinGroup;
+if (spinEnabled) {
+  // Keep explicit lights (and directional/spot targets) fixed while the plot turns.
+  const lights = [];
+  group.traverse(object => { if (object.isLight) lights.push(object); });
+  const keepFixed = object => {
+    const position = object.getWorldPosition(new THREE.Vector3());
+    const quaternion = object.getWorldQuaternion(new THREE.Quaternion());
+    scene.add(object);
+    object.position.copy(position);
+    object.quaternion.copy(quaternion);
+  };
+  for (const light of lights) {
+    if (light.target?.parent && light.target !== light) keepFixed(light.target);
+    keepFixed(light);
+  }
+
+  spinGroup = new THREE.Group();
+  spinGroup.position.copy(group.position);
+  group.position.set(0, 0, 0);
+  spinGroup.add(group);
+  scene.add(spinGroup);
+}
+
 //console.error(new THREE.Box3().setFromObject(scene));
 
 
@@ -7206,6 +7986,7 @@ function updateCamera( cameraProjection ) {
   controls.update();
 
   env.local.camera   = activeCamera;
+  env.global.camera   = activeCamera;
   envcopy.camera   = activeCamera;
 
 
@@ -7215,8 +7996,60 @@ function updateCamera( cameraProjection ) {
 }
 
 let animate;
+let spinElapsed = 0;
+let spinLastFrame = performance.now();
+let spinVisible = true;
+
+if (spinEnabled) {
+  const isVisible = () => {
+    if (document.hidden || !container.isConnected) return false;
+    for (let node = container; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+    }
+
+    const rect = container.getBoundingClientRect();
+    const left = Math.max(0, rect.left);
+    const right = Math.min(window.innerWidth, rect.right);
+    const top = Math.max(0, rect.top);
+    const bottom = Math.min(window.innerHeight, rect.bottom);
+    if (right <= left || bottom <= top) return false;
+
+    return [[0.5, 0.5], [0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.9, 0.9]]
+      .some(([x, y]) => container.contains(document.elementFromPoint(
+        left + (right - left) * x, top + (bottom - top) * y
+      )));
+  };
+
+  const checkVisibility = () => {
+    const visible = isVisible();
+    console.log('Graphics3D SpinShow visible:', visible);
+    if (visible === spinVisible) return;
+    spinVisible = visible;
+    if (visible) {
+      spinLastFrame = performance.now();
+      wakeFunction(PathRendering);
+    } else {
+      sleeping = true;
+      cancelAnimationFrame(env.local.aid);
+    }
+  };
+
+  checkVisibility();
+  env.local.spinVisibilityTimer = setInterval(checkVisibility, 2000);
+}
 
 animate = () => {
+  if (spinEnabled) {
+    if (!spinVisible) { sleeping = true; return; }
+    const now = performance.now();
+    spinElapsed += (now - spinLastFrame) / 1000;
+    spinLastFrame = now;
+    spinGroup.rotation.y = spinMaxAngle === Infinity
+      ? spinElapsed * spinSpeed
+      : spinMaxAngle * Math.sin(spinElapsed * spinSpeed / spinMaxAngle);
+    wakeFunction(PathRendering);
+  }
   animateOnce();
 
   if (performance.now() - timeStamp > params.sleepAfter && !params.runInfinitely) {
@@ -7347,6 +8180,7 @@ return env;
 
 core.Graphics3D.destroy = (args, env) => {
   console.log('Graphics3D was removed');
+  if (env.local.spinVisibilityTimer) clearInterval(env.local.spinVisibilityTimer);
   env.local.wakeThreadUp = () => {};
   env.local.controlObject.dispose();
   cancelAnimationFrame(env.local.aid);
@@ -7806,7 +8640,7 @@ g3d['CoffeeLiqueur`Extensions`Graphics3D`Private`SampledColorFunction'] = async 
   return { colors, type };
 };
 
-core.Image3D = async (args, env) => {
+const initializeImage3D = async (args, env) => {
   await interpretate.shared.THREE.load();
 
   if (!THREE) {
@@ -8169,9 +9003,35 @@ core.Image3D = async (args, env) => {
   animationLoop();
 };
 
+core.Image3D = (args, env) => {
+  env.local.initialized = false;
+  env.local.destroyed = false;
+  delete env.local.initError;
+
+  const initialization = initializeImage3D(args, env);
+
+  env.local.initComplete = initialization.then(
+    (result) => {
+      env.local.initialized = true;
+      return result;
+    },
+    (error) => {
+      env.local.initError = error;
+    }
+  );
+
+  return initialization;
+};
+
 core.Image3D.virtual = true;
 
 core.Image3D.update = async (args, env) => {
+  if (env.local.initComplete) {
+    await env.local.initComplete;
+  }
+
+  if (env.local.destroyed || env.local.initError || env.local.initialized === false) return;
+
   let data = await interpretate(args[0], env);
 
   if (Array.isArray(data)) {
@@ -8184,11 +9044,12 @@ core.Image3D.update = async (args, env) => {
   const converted = imageTypes[env.local.typeName].convert(data);
   env.local.volumeTexture.image.data.set(converted.data);
   env.local.volumeTexture.needsUpdate = true;
-  env.local?.wakeFunction();
+  env.local.wakeFunction?.();
 };
 
 core.Image3D.destroy = (args, env) => {
   console.warn('Dispose');
+  env.local.destroyed = true;
   env.element.classList.remove('wljs-canvas');
 
   if (env.local.animation) {
