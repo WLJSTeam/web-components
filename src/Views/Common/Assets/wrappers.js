@@ -69,6 +69,7 @@ core.CellHash = CellHash;
 core.Notebook = Notebook;
 
 let currentCell;
+let lastCellGutterHapticAt = 0;
 
 let forceFocusNew = false;
 let focusDirection = 1;
@@ -216,6 +217,19 @@ window.CellWrapper = class {
   }
 
   channel;
+
+  bindGutterHaptic() {
+    if (!window.electronAPI) return;
+    if (this.type !== 'Input') return;
+
+    const gutter = this.group;
+    if (!gutter) return;
+
+    gutter.addEventListener('mouseenter', () => {
+      if (this.invisible || this.props["Locked"]) return;
+      window.electronAPI.harptic(0);
+    });
+  }
 
   ignoreNextUpdate() {
     this._ignoreNextUpdate = true;
@@ -580,6 +594,8 @@ window.CellWrapper = class {
     this.element = document.getElementById(this.uid);
     this.display = new window.SupportedCells[input["Display"]].view(this, input["Data"]);  
 
+    this.bindGutterHaptic();
+
     if (!notebook.focusedFirst && meta["FocusFirst"]) {
       if (this.type == 'Input' && this.display.editor && !(this.props["Locked"] || this.invisible || this.props["Hidden"])) {
         notebook.focusedFirst = true;
@@ -714,6 +730,7 @@ window.CellWrapper = class {
     }
 
     this.type = 'Input';
+    this.bindGutterHaptic();
 
     this.element.addEventListener('focusin', ()=>{
       //call on cell focus event

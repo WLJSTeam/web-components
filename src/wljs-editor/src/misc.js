@@ -40,6 +40,12 @@ core.Confirm = async (args, env) => {
     return await interpretate.confirmAsync(text);
 }
 
+core.HapticFeedback = async (args, env) => {
+  if (!window.electronAPI) return;
+  const requested = args.length ? await interpretate(args[0], env) : 0;
+  window.electronAPI.harptic(requested);
+}
+
 core['CoffeeLiqueur`Extensions`Rasterize`Internal`OverlayView'].Capture = async (args, env) => {
     if (!(window?.electronAPI?.requestScreenshot)) {
         if (overlay) await overlay.dispose();
