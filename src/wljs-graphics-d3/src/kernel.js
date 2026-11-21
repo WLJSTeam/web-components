@@ -2506,6 +2506,7 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
   }  
 
   g2d.CapForm = () => {}
+  g2d.ContentSize = () => "ContentSize"
 
   g2d.FilledCurve = async (args, env) => {
     const path = d3.path();
@@ -2553,23 +2554,23 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
     }    
 
     const foreignObject = group.append('foreignObject');
-
-
+    //consume all mousedown events
+    foreignObject.node().addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+    });   
+   
+   
+    
+    
     //const foreignObject = foreignObject.append('xhtml:canvas').attr('xmlns', 'http://www.w3.org/1999/xhtml').node();
     const stack = {};
     env.local.stack = stack;
 
     const copy = {global: {...env.global, stack: stack}, inset:true, element: foreignObject.node(), context: g2d};
 
-    if (args.length - oLength > 3) {
-      const possibleSize = await interpretate(args[3], env);
-      if (Array.isArray(possibleSize)) {
-        //if (!Number.isNaN(possibleSize[0]) &&  !Number.isNaN(possibleSize[1])) size = possibleSize;
-        //ignore
-      }
-    }
-
     let box;
+    let possiblyNeedsScaling = false;
+    let needsScalingAfter = false;
 
     if (opts.ImageSizeRaw) {
       const dims = opts.ImageSizeRaw;
@@ -2578,7 +2579,24 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
       box = {width: dims[0], height: dims[1]};
     }
 
-    let possiblyNeedsScaling = false;
+    if (opts.ImageSize || opts.ContentSize) {
+      //if container size is defined already
+      //this helps for element which adjust their size based on the parent
+      const dims = opts.ImageSize || opts.ContentSize;
+      foreignObject.attr('width', dims[0]);
+      foreignObject.attr('height', dims[1]);    
+      box = {width: dims[0], height: dims[1]};   
+
+      needsScalingAfter = true;
+      //create additional container with fixed size
+      const container = document.createElement('div');
+      container.style.width = Math.floor(dims[0])+'px';
+      container.style.height = Math.floor(dims[1])+'px';   
+      foreignObject.node().appendChild(container);
+      copy.element = container; //replace in copy
+    }
+
+    
     if (size && !box) {
       if (typeof size === 'number') {
         size = [Math.abs(env.xAxis(size) - env.xAxis(0)), 'Automatic'];
@@ -2713,6 +2731,50 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
           console.log('size matches');
         }
       }
+    }
+
+    if (needsScalingAfter) {
+
+    if (typeof size === 'number') {
+      size = [Math.abs(env.xAxis(size) - env.xAxis(0)), 'Automatic'];
+      foreignObject.attr('width', size[0]);
+      foreignObject.attr('height', 2*size[0]); 
+      possiblyNeedsScaling = true;        
+    } else if (Array.isArray(size)) {
+      if (typeof size[0] == 'number' && typeof size[1] == 'number') {
+        size = [Math.abs(env.xAxis(size[0]) - env.xAxis(0)), Math.abs(env.yAxis(size[1]) - env.yAxis(0))];
+      } }
+      
+      if (!size) {
+          console.log('no size preference');
+      } else if (size[1] == 'Automatic') {
+          const aspect = box.height / box.width;
+          const scale = size[0] / box.width;
+          const inner = foreignObject.node().firstChild;
+          if (inner) {
+            inner.style.transformOrigin = '0 0';
+            inner.style.transform = `scale(${scale})`;
+          }
+          box = { width: size[0], height: aspect * size[0] };
+          foreignObject.attr('width', Math.floor(box.width));
+          foreignObject.attr('height', Math.floor(box.height));
+
+      } else if (Math.abs(box.width - size[0]) > 2 || Math.abs(box.height - size[1]) > 2) {
+          const scaleX = size[0] / box.width;
+          const scaleY = size[1] / box.height;
+          const inner = foreignObject.node().firstChild;
+          
+          const minScale = Math.min(scaleX, scaleY)
+          if (inner) {
+            inner.style.transformOrigin = '0 0';
+            inner.style.transform = `scale(${minScale})`;
+          }
+          box = { width: box.width * minScale, height: box.height * minScale };
+          foreignObject.attr('width', Math.floor(box.width));
+          foreignObject.attr('height', Math.floor(box.height));
+      } else {
+          console.log('size matches');
+      }  
     }
 
     env.local.box = box;
@@ -2942,8 +3004,8 @@ async function processLabel(ref0, gX, env, textFallback, nodeFallback) {
       // prevent scrolling then apply the default filter
       function filter(event) {
         event.preventDefault();
-        return (!event.ctrlKey || event.type === 'wheel') && !event.button;
-      }    
+        return event.type !== 'dblclick' && (!event.ctrlKey || event.type === 'wheel') && !event.button;
+      }   
   }
 
   g2d.Texture = async (args, env) => {
@@ -7371,9 +7433,11 @@ return object;
     const copy = {...env};
 
     let object = await interpretate(args[0], copy);
-
+    let gcanvasQ = false;
+    
     if (!object) {
       object = getCanvas(copy);
+      gcanvasQ = true;
     } else {
       if (Array.isArray(object)) object = object[0];
     }
@@ -7381,7 +7445,7 @@ return object;
     if (!object.on_list) object.on_list = {};
 
     rules.forEach((rule)=>{
-      g2d.EventListener[rule.lhs](rule.rhs, object, copy);
+      g2d.EventListener[rule.lhs](rule.rhs, object, copy, gcanvasQ);
     });
 
     return null;
@@ -7391,62 +7455,19 @@ return object;
     console.log('EventListener does not support updates');
   }
   
-  g2d.EventListener.onload = (uid, object, env) => {
+  g2d.EventListener.onload = (uid, object, env, gcanvasQ) => {
 
     console.log('onload event generator');
     server.kernel.io.fire(uid, true, 'onload');
   };  
 
-  g2d.MiddlewareListener = async (args, env) => {
-    const options = await core._getRules(args, env);
-    const name = await interpretate(args[1], env);
-    const uid = await interpretate(args[2], env);
-    console.log(args);
-    env.local.middleware = g2d.MiddlewareListener[name](uid, options, env);
-
-    return (await interpretate(args[0], env));
-  }
-
-  g2d.MiddlewareListener.update = (args, env) => {
-    return interpretate(args[0], env);
-  }
-
-  //g2d.MiddlewareListener.destroy = (args, env) => {
-    //return interpretate(args[0], env);
-  //}  
-
-  g2d.MiddlewareListener.end = (uid, params, env) => {
-    const threshold = params.Threshold || 1.0;
-    
-    server.kernel.io.fire(uid, true, 'end');
-    console.log("pre Fire");
-
-    return (object) => {
-      let state = false;
-      
-
-      return object.then((r) => r.tween(uid, function (d) {
-        return function (t) {
-          if (t >= threshold && !state) {
-            server.kernel.io.fire(uid, true, 'end');
-            state = true;
-          }
-        }
-      }))
-    }
-  }
-
-  g2d.MiddlewareListener.endtransition = g2d.MiddlewareListener.end
-
-  //g2d.EventListener.destroy = (args, env) => {interpretate(args[0], env)}
-
-  g2d.EventListener.drag = (uid, object, env) => {
+  g2d.EventListener.drag = (uid, object, env, gcanvasQ) => {
     const xAxis = env.xAxis;
     const yAxis = env.yAxis;
 
     let bbox = null;
 
-    object.classed("cursor-pointer", true);
+    object.classed("cursor-grab", true);
 
     function dragstarted(event, d) {
       // `this` is the DOM element being dragged
@@ -7483,8 +7504,8 @@ return object;
     );
   };
 
-g2d.EventListener.dragsignal = (uid, object, env) => {
-  object.classed("cursor-pointer", true);
+g2d.EventListener.dragsignal = (uid, object, env, gcanvasQ) => {
+  object.classed("cursor-grab", true);
 
   const svgNode = env.panZoomEntites.canvas.node();
   // The graphics group is inside the pan/zoom group but outside any primitive
@@ -7523,8 +7544,8 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
   object.on("mousedown", onMouseDown);
 };
 
-  g2d.EventListener.dragall = (uid, object, env) => {
-
+  g2d.EventListener.dragall = (uid, object, env, gcanvasQ) => {
+    object.classed("cursor-grab", true);
     console.log('drag event generator');
     console.log(env.local);
     const xAxis = env.xAxis;
@@ -7556,7 +7577,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
   };
 
 
-  g2d.EventListener.click = (uid, object, env) => {
+  g2d.EventListener.click = (uid, object, env, gcanvasQ) => {
 
     console.log('click event generator');
     console.log(env.local);
@@ -7572,7 +7593,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
         updatePos(xAxis.invert(p[0]), yAxis.invert(p[1]))
     }
 
-    object.classed("cursor-pointer", true);
+    if (!gcanvasQ) object.classed("cursor-pointer", true);
   
     if ('click' in object.on_list) {
       object.on_list.click.push((e)=>clicked(e, d3.pointer(e)));
@@ -7586,7 +7607,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     }
   };  
 
-  g2d.EventListener.mousedown = (uid, object, env) => {
+  g2d.EventListener.mousedown = (uid, object, env, gcanvasQ) => {
 
     console.log('mousedown event generator');
     console.log(env.local);
@@ -7606,7 +7627,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     object.on("mousedown", (e)=>clicked(e, d3.pointer(e)), true);
   };  
 
-  g2d.EventListener.mouseup = (uid, object, env) => {
+  g2d.EventListener.mouseup = (uid, object, env, gcanvasQ) => {
 
     console.log('mouseup event generator');
     console.log(env.local);
@@ -7628,7 +7649,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     });
   };  
 
-  g2d.EventListener.rightclick = (uid, object, env) => {
+  g2d.EventListener.rightclick = (uid, object, env, gcanvasQ) => {
 
     console.log('mouseup event generator');
     console.log(env.local);
@@ -7651,7 +7672,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     });
   }; 
 
-  g2d.EventListener.contextmenu = (uid, object, env) => {
+  g2d.EventListener.contextmenu = (uid, object, env, gcanvasQ) => {
 
     console.log('mouseup event generator');
     console.log(env.local);
@@ -7674,7 +7695,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     });
   };  
   
-  const modifierClickListener = (eventName, modifierKey) => (uid, object, env) => {
+  const modifierClickListener = (eventName, modifierKey) => (uid, object, env, gcanvasQ) => {
     console.log(`${eventName} event generator`);
     console.log(env.local);
     const xAxis = env.xAxis;
@@ -7705,7 +7726,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
   g2d.EventListener.metaclick = modifierClickListener('metaclick', 'metaKey');
   g2d.EventListener.shiftclick = modifierClickListener('shiftclick', 'shiftKey');
 
-  const capturedKeyListener = (eventNames, channel, formatEvent) => (uid, object, env) => {
+  const capturedKeyListener = (eventNames, channel, formatEvent) => (uid, object, env, gcanvasQ) => {
     //console.error('You cannot listen keys from the SVG element!');
     let focus;
     let enabled = true;
@@ -7763,7 +7784,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     keyEvent
   );
 
-  g2d.EventListener.keydown = (uid, object, env) => {
+  g2d.EventListener.keydown = (uid, object, env, gcanvasQ) => {
     //console.error('You cannot listen keys from the SVG element!');
     let focus;
     let enabled = true;
@@ -7801,7 +7822,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     });
   };  
 
-  g2d.EventListener.mousemove = (uid, object, env) => {
+  g2d.EventListener.mousemove = (uid, object, env, gcanvasQ) => {
 
     console.log('mouse event generator');
     const xAxis = env.xAxis;
@@ -7821,7 +7842,28 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     });
   };   
 
-  g2d.EventListener.mouseover = (uid, object, env) => {
+  const pointerEventData = (event, Position) => {
+    const Tilt = [event.tiltX, event.tiltY];
+    const Pressure = event.pressure;
+    const Buttons = event.buttons;
+
+    return {Position, Tilt, Pressure, Buttons};
+  };
+
+  const graphicsPointerEventListener = (eventName) => (uid, object, env, gcanvasQ) => {
+    object.on(eventName, function(event) {
+      const point = d3.pointer(event, this);
+      const Position = [env.xAxis.invert(point[0]), env.yAxis.invert(point[1])];
+      server.kernel.io.fire(uid, pointerEventData(event, Position), eventName);
+    });
+  };
+
+  g2d.EventListener.pointerdown = graphicsPointerEventListener('pointerdown');
+  g2d.EventListener.pointerup = graphicsPointerEventListener('pointerup');
+  g2d.EventListener.pointermove = graphicsPointerEventListener('pointermove');
+  g2d.EventListener.pointerrawupdate = graphicsPointerEventListener('pointerrawupdate');
+
+  g2d.EventListener.mouseover = (uid, object, env, gcanvasQ) => {
 
     console.log('mouse event generator');
 
@@ -7839,7 +7881,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     object.on("mouseover", e => moved(d3.pointer(e)));
   };  
 
-  g2d.EventListener.mouseenter = (uid, object, env) => {
+  g2d.EventListener.mouseenter = (uid, object, env, gcanvasQ) => {
 
     console.log('mouse event generator');
     console.log(env.local);
@@ -7858,7 +7900,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
   };  
   
   
-  g2d.EventListener.mouseleave = (uid, object, env) => {
+  g2d.EventListener.mouseleave = (uid, object, env, gcanvasQ) => {
 
     console.log('mouse event generator');
     console.log(env.local);
@@ -7876,7 +7918,7 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
     object.on("mouseleave", e => moved(d3.pointer(e)));
   };   
 
-  g2d.EventListener.zoom = (uid, object, env) => {
+  g2d.EventListener.zoom = (uid, object, env, gcanvasQ) => {
 
     console.log('zoom event generator');
     console.log(env.local);
@@ -9570,6 +9612,20 @@ g2d.EventListener.dragsignal = (uid, object, env) => {
 
     canvas.addEventListener("mousemove", clicked);
   }  
+
+  const imagePointerEventListener = (eventName) => (uid, canvas, env) => {
+    const dpr = window.devicePixelRatio;
+
+    canvas.addEventListener(eventName, (event) => {
+      const Position = [event.offsetX*dpr, event.offsetY*dpr];
+      server.kernel.io.fire(uid, pointerEventData(event, Position), eventName);
+    });
+  };
+
+  imageContext.EventListener.pointerdown = imagePointerEventListener('pointerdown');
+  imageContext.EventListener.pointerup = imagePointerEventListener('pointerup');
+  imageContext.EventListener.pointermove = imagePointerEventListener('pointermove');
+  imageContext.EventListener.pointerrawupdate = imagePointerEventListener('pointerrawupdate');
 
   imageContext.EventListener.mouseover = (uid, canvas, env) => {
     const dpr = window.devicePixelRatio;
